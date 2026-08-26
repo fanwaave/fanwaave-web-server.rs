@@ -1,0 +1,17 @@
+# flags-2-env surface for `fanwaave-web`
+[flags.config]
+env = "FANWAAVE_CONFIG"
+long = "config"
+help = "Path to TOML configuration"
+
+[flags.api_base]
+env = "FANWAAVE_API_BASE"
+long = "api-base"
+help = "API HTTP base URL"
+
+[flags.json]
+env = "FANWAAVE_JSON"
+long = "json"
+switch = true
+help = "Emit JSON"
+

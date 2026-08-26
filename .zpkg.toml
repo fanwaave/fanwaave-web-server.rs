@@ -1,0 +1,4 @@
+name = "fanwaave-web-server.rs"
+kind = "web-server"
+version = "0.1.0"
+
