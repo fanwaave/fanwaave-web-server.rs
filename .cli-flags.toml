@@ -15,3 +15,21 @@ long = "json"
 switch = true
 help = "Emit JSON"
 
+
+[flags.fanwaave-api-http-base]
+env = "FANWAAVE_API_HTTP_BASE"
+long = "fanwaave-api-http-base"
+type = "string"
+help = "Runtime environment key FANWAAVE_API_HTTP_BASE."
+
+[flags.fanwaave-database-url]
+env = "FANWAAVE_DATABASE_URL"
+long = "fanwaave-database-url"
+type = "string"
+help = "Runtime environment key FANWAAVE_DATABASE_URL."
+
+[flags.fanwaave-web-bind]
+env = "FANWAAVE_WEB_BIND"
+long = "fanwaave-web-bind"
+type = "string"
+help = "Runtime environment key FANWAAVE_WEB_BIND."
