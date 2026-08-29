@@ -1,4 +1,10 @@
 # flags-2-env surface for `fanwaave-web`
+[help]
+url = "https://github.com/fanwaave/fanwaave-web-server.rs"
+
+[parse]
+allow_unknown = false
+
 [flags.config]
 env = "FANWAAVE_CONFIG"
 long = "config"
@@ -15,21 +21,21 @@ long = "json"
 switch = true
 help = "Emit JSON"
 
-
-[flags.fanwaave-api-http-base]
-env = "FANWAAVE_API_HTTP_BASE"
-long = "fanwaave-api-http-base"
-type = "string"
-help = "Runtime environment key FANWAAVE_API_HTTP_BASE."
-
-[flags.fanwaave-database-url]
-env = "FANWAAVE_DATABASE_URL"
-long = "fanwaave-database-url"
-type = "string"
-help = "Runtime environment key FANWAAVE_DATABASE_URL."
-
-[flags.fanwaave-web-bind]
+[flags.bind]
 env = "FANWAAVE_WEB_BIND"
-long = "fanwaave-web-bind"
+aliases = ["bind", "fanwaave-web-bind"]
 type = "string"
-help = "Runtime environment key FANWAAVE_WEB_BIND."
+default = "127.0.0.1:8081"
+help = "HTTP bind address."
+
+[flags.api-http-base]
+env = "FANWAAVE_API_HTTP_BASE"
+aliases = ["api-http-base", "fanwaave-api-http-base"]
+type = "string"
+help = "API HTTP base URL."
+
+[flags.database-url]
+env = "FANWAAVE_DATABASE_URL"
+aliases = ["database-url", "fanwaave-database-url"]
+type = "string"
+help = "Optional database URL for direct reads."
