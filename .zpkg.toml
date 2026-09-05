@@ -2,3 +2,6 @@ name = "fanwaave-web-server.rs"
 kind = "web-server"
 version = "0.1.0"
 
+[dependencies]
+"fanwaave/fanwaave-lib-core" = "^0.1.0"
+"fanwaave/fanwaave-orm-core" = "^0.1.0"
