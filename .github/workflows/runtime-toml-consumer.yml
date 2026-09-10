@@ -118,4 +118,7 @@ jobs:
           toolchain: 1.88.0
 
       - name: Test flags-2-env and Fanwaave config boundary
-        run: cargo test --locked
+        # This application currently has no committed Cargo.lock. `--locked`
+        # cannot be meaningful until that separate reproducibility fix lands;
+        # exercise the exact candidate instead of silently skipping Rust tests.
+        run: cargo test
