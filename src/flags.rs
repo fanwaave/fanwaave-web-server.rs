@@ -27,13 +27,6 @@ pub fn resolve_sources() -> Result<AppliedFlags, String> {
     resolve_sources_from(&std::env::args().collect::<Vec<_>>(), std::env::vars())
 }
 
-fn resolve_from(
-    argv: &[String],
-    environment: impl IntoIterator<Item = (String, String)>,
-) -> Result<BTreeMap<String, String>, String> {
-    Ok(resolve_sources_from(argv, environment)?.merged)
-}
-
 fn resolve_sources_from(
     argv: &[String],
     environment: impl IntoIterator<Item = (String, String)>,
@@ -77,10 +70,6 @@ fn resolve_sources_from(
         ));
     }
 
-    // Keep the pre-argv and argv-only channels distinct. This is required by
-    // the Fanwaave domain resolver so secret bindings cannot be supplied on the
-    // command line. TOML defaults from flags-2-env are intentionally not used
-    // as argv overrides.
     let mut ambient_raw = parsed.dotenv;
     ambient_raw.extend(environment);
     ambient_raw.extend(parsed.dotenv_overrides);
@@ -125,7 +114,7 @@ mod tests {
 
     #[test]
     fn unknown_options_fail_closed_without_echoing_values() {
-        let error = resolve_from(
+        let error = resolve_sources_from(
             &[
                 "server".to_owned(),
                 "--definitely-unknown=do-not-echo".to_owned(),
