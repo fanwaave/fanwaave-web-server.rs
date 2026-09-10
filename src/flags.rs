@@ -8,14 +8,36 @@ use tempfile::NamedTempFile;
 
 const CONTRACT: &str = include_str!("../.cli-flags.toml");
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppliedFlags {
+    /// dotenv + process environment + explicit dotenv overrides, before argv.
+    pub ambient: BTreeMap<String, String>,
+    /// Only options explicitly supplied on argv. Domain resolvers use this to
+    /// reject secret values crossing the command-line boundary.
+    pub argv_overrides: BTreeMap<String, String>,
+    /// Fully typed/coerced argv-over-environment view for legacy consumers.
+    pub merged: BTreeMap<String, String>,
+}
+
 pub fn resolve() -> Result<BTreeMap<String, String>, String> {
-    resolve_from(&std::env::args().collect::<Vec<_>>(), std::env::vars())
+    Ok(resolve_sources()?.merged)
+}
+
+pub fn resolve_sources() -> Result<AppliedFlags, String> {
+    resolve_sources_from(&std::env::args().collect::<Vec<_>>(), std::env::vars())
 }
 
 fn resolve_from(
     argv: &[String],
     environment: impl IntoIterator<Item = (String, String)>,
 ) -> Result<BTreeMap<String, String>, String> {
+    Ok(resolve_sources_from(argv, environment)?.merged)
+}
+
+fn resolve_sources_from(
+    argv: &[String],
+    environment: impl IntoIterator<Item = (String, String)>,
+) -> Result<AppliedFlags, String> {
     let mut contract = NamedTempFile::new()
         .map_err(|error| format!("cannot create embedded flags-2-env contract: {error}"))?;
     contract
@@ -55,18 +77,35 @@ fn resolve_from(
         ));
     }
 
-    let mut raw = parsed.dotenv;
-    raw.extend(environment);
-    raw.extend(parsed.dotenv_overrides);
-    raw.extend(parsed.provided_flags);
+    // Keep the pre-argv and argv-only channels distinct. This is required by
+    // the Fanwaave domain resolver so secret bindings cannot be supplied on the
+    // command line. TOML defaults from flags-2-env are intentionally not used
+    // as argv overrides.
+    let mut ambient_raw = parsed.dotenv;
+    ambient_raw.extend(environment);
+    ambient_raw.extend(parsed.dotenv_overrides);
+    let ambient = ambient_raw.into_iter().collect::<BTreeMap<_, _>>();
+    let argv_overrides = parsed
+        .provided_flags
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+
+    let mut raw = ambient.clone();
+    raw.extend(argv_overrides.clone());
     let typed = parser
         .coerce::<serde_json::Map<String, serde_json::Value>, _>(&raw, Some(path))
         .map_err(|error| format!("flags-2-env typed configuration failed: {error}"))?;
-    typed
+    let merged = typed
         .into_iter()
         .filter(|(_, value)| !value.is_null())
         .map(|(name, value)| scalar_string(&name, value).map(|value| (name, value)))
-        .collect()
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+
+    Ok(AppliedFlags {
+        ambient,
+        argv_overrides,
+        merged,
+    })
 }
 
 fn scalar_string(name: &str, value: serde_json::Value) -> Result<String, String> {
@@ -96,5 +135,29 @@ mod tests {
         .expect_err("unknown option");
         assert!(error.contains("--definitely-unknown"));
         assert!(!error.contains("do-not-echo"));
+    }
+
+    #[test]
+    fn explicit_argv_is_preserved_separately_from_ambient_environment() {
+        let applied = resolve_sources_from(
+            &[
+                "server".to_owned(),
+                "--fanwaave-web-bind=127.0.0.1:9090".to_owned(),
+            ],
+            [("FANWAAVE_WEB_BIND".to_owned(), "127.0.0.1:8081".to_owned())],
+        )
+        .expect("valid flags");
+        assert_eq!(
+            applied.ambient.get("FANWAAVE_WEB_BIND").map(String::as_str),
+            Some("127.0.0.1:8081")
+        );
+        assert_eq!(
+            applied.argv_overrides.get("FANWAAVE_WEB_BIND").map(String::as_str),
+            Some("127.0.0.1:9090")
+        );
+        assert_eq!(
+            applied.merged.get("FANWAAVE_WEB_BIND").map(String::as_str),
+            Some("127.0.0.1:9090")
+        );
     }
 }
