@@ -1,0 +1,33 @@
+# Shared Auth compatibility manifest. Current Shared Auth policy treats `.shared-auth.toml` as canonical
+# and `.auth-shared.toml` as a compatibility alias; NEVER add both files to the same repository.
+# Candidate peer-authority baseline: shared-auth/shared-auth-interfaces#49 @ eb521bb8da4b552c750758d8822afb37dff94949.
+# TJSV validator baseline: ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1.
+# The Shared Auth org's hosted workflow currently starts zero steps, so this manifest remains rollout evidence
+# and must not be treated as an admitted production auth change until exact-head TJSV execution is green.
+version = 1
+organization = "fanwaave"
+domain = "ores-shared-auth.com"
+realm = "customer-auth"
+auth_origin = "https://auth.ores-shared-auth.com"
+callback_urls = ["https://user.ores-shared-auth.com/auth/callback/", "https://org.ores-shared-auth.com/auth/callback/"]
+surfaces = ["mash"]
+
+[pages]
+login = "/login"
+signup = "/signup"
+recovery = "/password-recovery"
+
+[security]
+pkce_method = "S256"
+browser_session = "http-only-cookie"
+native_session = "os-secure-storage"
+minimum_assurance = "aal1"
+decision_mode = "strict-paired"
+
+[bindings]
+authority_env = "SHARED_AUTH_AUTHORITY"
+callback_env = "SHARED_AUTH_CALLBACK_URL"
+
+[local]
+auth_origin = "http://127.0.0.1:8080"
+callback_urls = ["http://127.0.0.1:8081/auth/callback/"]
