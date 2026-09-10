@@ -11,11 +11,10 @@ precedence = "argv-over-env"
 enabled = true
 bind_addr_binding = "bind_addr"
 database_url_binding = "database_url"
-push_provider_binding = "push_provider"
 
 [[env]]
 name = "bind_addr"
-key = "FANWAAVE_BIND_ADDR"
+key = "FANWAAVE_WEB_BIND"
 kind = "string"
 required = false
 secret = false
@@ -23,16 +22,8 @@ default = "0.0.0.0:8080"
 
 [[env]]
 name = "database_url"
-key = "DATABASE_URL"
+key = "FANWAAVE_DATABASE_URL"
 kind = "url"
 required = true
 secret = true
 description = "Database credential URI from the approved runtime secret boundary."
-
-[[env]]
-name = "push_provider"
-key = "FANWAAVE_PUSH_PROVIDER"
-kind = "string"
-required = false
-secret = false
-default = "fcm"
