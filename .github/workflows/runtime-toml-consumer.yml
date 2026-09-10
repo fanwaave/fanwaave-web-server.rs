@@ -16,38 +16,106 @@ permissions:
   contents: read
 
 jobs:
-  oresc-consumer:
-    runs-on: ubuntu-latest
+  runtime-toml-consumer:
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out Fanwaave candidate
+      - name: Check out exact Fanwaave candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+
+      # ORESoftware/ores-cli is private. A repository-scoped GITHUB_TOKEN cannot
+      # clone it cross-organization, and a PR workflow must not be taught a PAT.
+      # Keep consumer admission self-contained here; the independently authored
+      # producer contracts remain fail-closed under their own TJSV exact-head gates.
+      - name: Parse and semantically admit runtime TOML suite
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          root = pathlib.Path('.')
+          names = [
+              '.cli-flags.toml',
+              '.fanwaave-cfg.toml',
+              '.ores-mw.toml',
+              '.ores-rl.toml',
+              '.ores-lru.toml',
+              '.auth-shared.toml',
+              '.ores-otel.toml',
+          ]
+          cfg = {}
+          for name in names:
+              path = root / name
+              if not path.is_file():
+                  raise SystemExit(f'missing required runtime contract: {name}')
+              with path.open('rb') as fh:
+                  cfg[name] = tomllib.load(fh)
+
+          cli = cfg['.cli-flags.toml']
+          assert cli.get('parse', {}).get('allow_unknown') is False
+          assert cli.get('env', {}).get('load') is False
+
+          fan = cfg['.fanwaave-cfg.toml']
+          assert fan.get('version') == 1
+          assert fan.get('mode') == 'server'
+          assert fan.get('strict') is True
+          assert fan.get('flags2env', {}).get('contract') == '.cli-flags.toml'
+          assert fan.get('flags2env', {}).get('require_audit') is True
+          assert fan.get('flags2env', {}).get('precedence') == 'argv-over-env'
+          secret_env = [e for e in fan.get('env', []) if e.get('secret') is True]
+          assert secret_env, 'Fanwaave server must declare at least one secret env boundary'
+          assert all('default' not in e for e in secret_env), 'secret env declarations may not have TOML defaults'
+
+          mw = cfg['.ores-mw.toml']
+          assert mw.get('schema_version') == 1
+          assert mw.get('repository_mode') == 'server-only'
+          targets = mw.get('targets', [])
+          assert targets
+          assert all(t.get('role') == 'server' for t in targets)
+          assert all(t.get('middleware') == 'disabled' for t in targets), 'middleware must remain disabled until a repo-specific admitted stack exists'
+
+          rl = cfg['.ores-rl.toml']
+          assert rl.get('schemaVersion') == 'ores.rate-limit.config.v1'
+          assert rl.get('layout') == 'server-only'
+          server = rl.get('server', {})
+          env_name = server.get('keyHmacEnv', '')
+          assert re.fullmatch(r'[A-Z][A-Z0-9_]*', env_name), 'rate-limit HMAC reference must be an env-var name'
+          policies = rl.get('policies', [])
+          assert policies
+          assert all(p.get('enforcementMode') == 'observe-only' for p in policies)
+          assert all(p.get('consistencyMode') == 'advisory' for p in policies)
+          assert all(p.get('backendFailureMode') == 'fail-open' for p in policies)
+
+          lru = cfg['.ores-lru.toml']
+          assert lru.get('protocol') == 'ores.lru-config.v1'
+          assert lru.get('roles') == ['server']
+          assert lru.get('flags2env', {}).get('contract') == '.cli-flags.toml'
+          assert lru.get('flags2env', {}).get('requireAudit') is True
+          assert lru.get('redis', {}).get('urlEnv') == 'REDIS_URL'
+          assert lru.get('defaults', {}).get('syncMode') == 'read_only'
+          assert lru.get('defaults', {}).get('failOpenOnStartup') is False
+          redis_env = [e for e in lru.get('env', []) if e.get('key') == 'REDIS_URL']
+          assert len(redis_env) == 1
+          assert redis_env[0].get('required') is True
+          assert redis_env[0].get('secret') is True
+          assert 'default' not in redis_env[0]
+
+          auth = cfg['.auth-shared.toml']
+          compat = auth.get('compatibility', {})
+          assert compat.get('repository') == 'https://github.com/shared-auth/shared-auth-interfaces'
+          assert re.fullmatch(r'[0-9a-f]{40}', compat.get('commit', '')), 'shared-auth authority must be immutably pinned'
+
+          print('runtime TOML consumer admission: passed')
+          PY
 
       - name: Install Rust 1.88
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.88.0
 
-      - name: Check out pinned ores-cli consumer linter
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: ORESoftware/ores-cli
-          ref: 7110347003c9c8a6f89475ff35d9443e2911df48
-          path: _tools/ores-cli
-          persist-credentials: false
-
-      - name: Run domain-aware runtime TOML regressions
-        run: cargo test --manifest-path _tools/ores-cli/Cargo.toml --locked runtime_toml_domain_tests
-
-      - name: Build pinned oresc
-        run: cargo build --manifest-path _tools/ores-cli/Cargo.toml --locked --bin oresc
-
-      - name: Audit the actual Fanwaave repository root
-        run: |
-          _tools/ores-cli/target/debug/oresc \
-            --no-json \
-            audit repo \
-            --path "$GITHUB_WORKSPACE" \
-            --profile baseline
+      - name: Test flags-2-env and Fanwaave config boundary
+        run: cargo test --locked
