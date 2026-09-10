@@ -1,35 +1,38 @@
-# flags-2-env surface for `fanwaave-web`
+[help]
+url = "https://github.com/fanwaave/fanwaave-web-server.rs"
+
+[env]
+load = false
+
+[parse]
+allow_unknown = false
+
 [flags.config]
 env = "FANWAAVE_CONFIG"
-long = "config"
-help = "Path to TOML configuration"
+aliases = ["config"]
+type = "string"
+help = "Path to compatibility configuration. Fanwaave domain policy is .fanwaave-cfg.toml."
 
-[flags.api_base]
+[flags.api-base]
 env = "FANWAAVE_API_BASE"
-long = "api-base"
-help = "API HTTP base URL"
+aliases = ["api-base"]
+type = "string"
+help = "API HTTP base URL."
 
 [flags.json]
 env = "FANWAAVE_JSON"
-long = "json"
-switch = true
-help = "Emit JSON"
-
+aliases = ["json"]
+type = "bool"
+help = "Emit JSON."
 
 [flags.fanwaave-api-http-base]
 env = "FANWAAVE_API_HTTP_BASE"
-long = "fanwaave-api-http-base"
+aliases = ["fanwaave-api-http-base"]
 type = "string"
-help = "Runtime environment key FANWAAVE_API_HTTP_BASE."
-
-[flags.fanwaave-database-url]
-env = "FANWAAVE_DATABASE_URL"
-long = "fanwaave-database-url"
-type = "string"
-help = "Runtime environment key FANWAAVE_DATABASE_URL."
+help = "Fanwaave API HTTP base URL used by the web server."
 
 [flags.fanwaave-web-bind]
 env = "FANWAAVE_WEB_BIND"
-long = "fanwaave-web-bind"
+aliases = ["fanwaave-web-bind"]
 type = "string"
-help = "Runtime environment key FANWAAVE_WEB_BIND."
+help = "Fanwaave web-server bind address."
