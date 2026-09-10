@@ -1,0 +1,53 @@
+name: runtime TOML consumer admission
+
+on:
+  pull_request:
+    paths:
+      - '.auth-shared.toml'
+      - '.fanwaave-cfg.toml'
+      - '.ores-lru.toml'
+      - '.ores-mw.toml'
+      - '.ores-otel.toml'
+      - '.ores-rl.toml'
+      - '.cli-flags.toml'
+      - '.github/workflows/runtime-toml-consumer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  oresc-consumer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out Fanwaave candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+
+      - name: Check out pinned ores-cli consumer linter
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ORESoftware/ores-cli
+          ref: 7110347003c9c8a6f89475ff35d9443e2911df48
+          path: _tools/ores-cli
+          persist-credentials: false
+
+      - name: Run domain-aware runtime TOML regressions
+        run: cargo test --manifest-path _tools/ores-cli/Cargo.toml --locked runtime_toml_domain_tests
+
+      - name: Build pinned oresc
+        run: cargo build --manifest-path _tools/ores-cli/Cargo.toml --locked --bin oresc
+
+      - name: Audit the actual Fanwaave repository root
+        run: |
+          _tools/ores-cli/target/debug/oresc \
+            --no-json \
+            audit repo \
+            --path "$GITHUB_WORKSPACE" \
+            --profile baseline
