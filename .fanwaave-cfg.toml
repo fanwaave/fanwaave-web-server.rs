@@ -1,0 +1,38 @@
+version = 1
+mode = "server"
+strict = true
+
+[flags2env]
+contract = ".cli-flags.toml"
+require_audit = true
+precedence = "argv-over-env"
+
+[server]
+enabled = true
+bind_addr_binding = "bind_addr"
+database_url_binding = "database_url"
+
+[[env]]
+name = "bind_addr"
+key = "FANWAAVE_WEB_BIND"
+kind = "string"
+required = false
+secret = false
+default = "127.0.0.1:8081"
+description = "Loopback-safe default bind address for the Fanwaave web server."
+
+[[env]]
+name = "database_url"
+key = "FANWAAVE_DATABASE_URL"
+kind = "url"
+required = false
+secret = true
+description = "Database URL delivered through the runtime secret environment only."
+
+[[env]]
+name = "api_http_base"
+key = "FANWAAVE_API_HTTP_BASE"
+kind = "url"
+required = false
+secret = false
+description = "Optional Fanwaave API HTTP base URL used by the web server."

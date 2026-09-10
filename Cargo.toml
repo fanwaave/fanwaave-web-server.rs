@@ -1,23 +1,23 @@
-    [package]
-    name = "fanwaave-web-server"
-    version = "0.1.0"
-    edition = "2021"
-    license = "MIT"
-    description = "MASH web server for Fanwaave"
-    repository = "https://github.com/fanwaave/fanwaave-web-server.rs"
+[package]
+name = "fanwaave-web-server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "MASH web server for Fanwaave"
+repository = "https://github.com/fanwaave/fanwaave-web-server.rs"
 
-    [features]
-    default = ["tcp-transport", "nats-transport"]
-    tcp-transport = []
-    nats-transport = []
+[features]
+default = ["tcp-transport", "nats-transport"]
+tcp-transport = []
+nats-transport = []
 
-    [dependencies]
-    flags2env = { version = "0.1.0", git = "https://github.com/flags-2-env/flags-2-env", rev = "d7bad9ea7dfc657653368237e08903514cdca1ec" }
-    serde = { version = "1", features = ["derive"] }
-    serde_json = "1"
-    tempfile = "3"
-    thiserror = "2"
+[dependencies]
+fanwaave-lib-core = { git = "https://github.com/fanwaave/fanwaave-lib-core.git", rev = "b7b0c79bf6c5c71a5508c12f25503ad001a1265e" }
+flags2env = { git = "https://github.com/flags-2-env/flags-2-env.git", rev = "b708a041531a830bd49f030250836896096e7abd" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
 
 [lints.rust]
 unsafe_code = "forbid"
-
