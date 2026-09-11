@@ -1,0 +1,36 @@
+# Contract authority: ores-redis-lru-cache/ores-lru-redis-interfaces.
+# Environment metadata contains names/policy only; resolved Redis credentials stay outside TOML.
+protocol = "ores.lru-config.v1"
+namespace = "fanwaave"
+roles = ["server"]
+
+[flags2env]
+contract = ".cli-flags.toml"
+requireAudit = true
+precedence = "argv-over-env"
+
+[[env]]
+name = "redis_url"
+key = "REDIS_URL"
+kind = "url"
+required = true
+secret = true
+description = "Redis credential URI supplied by the runtime secret boundary."
+
+[redis]
+urlEnv = "REDIS_URL"
+keyPrefix = "ores:lru:fanwaave"
+pubsubChannel = "ores:lru:fanwaave:events"
+reconcileIntervalMs = 180000
+reconnectMinMs = 1000
+reconnectMaxMs = 30000
+
+[defaults]
+capacity = 1024
+syncMode = "read_only"
+overflowMode = "reject_and_reconcile"
+failOpenOnStartup = false
+
+[[caches]]
+name = "runtime-env"
+role = "server"
