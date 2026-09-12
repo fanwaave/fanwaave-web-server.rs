@@ -1,0 +1,47 @@
+version = 1
+mode = "client"
+strict = true
+
+[flags2env]
+contract = ".cli-flags.toml"
+require_audit = true
+precedence = "argv-over-env"
+
+[[env]]
+name = "api_base_url"
+key = "ORES_CHAT_API_BASE_URL"
+kind = "url"
+required = true
+secret = false
+description = "ORES Chat HTTP API base URL used by this customer web server."
+
+[[env]]
+name = "websocket_url"
+key = "ORES_CHAT_WEBSOCKET_URL"
+kind = "url"
+required = false
+secret = false
+description = "Optional ORES Chat realtime websocket endpoint."
+
+[[env]]
+name = "tenant_id"
+key = "ORES_CHAT_TENANT_ID"
+kind = "string"
+required = false
+secret = false
+description = "Optional ORES Chat tenant selector."
+
+[[env]]
+name = "auth_token"
+key = "ORES_CHAT_AUTH_TOKEN"
+kind = "string"
+required = false
+secret = true
+description = "Optional customer chat auth token; environment or approved secret store only."
+
+[client]
+enabled = true
+api_base_url_binding = "api_base_url"
+websocket_url_binding = "websocket_url"
+tenant_id_binding = "tenant_id"
+auth_token_binding = "auth_token"
