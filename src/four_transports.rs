@@ -45,16 +45,30 @@ pub const SERVICE_SLUG: &str = "fanwaave";
 /// The api server route that accepts an envelope on avenue 2.
 pub const ENVELOPE_PATH: &str = "/v1/operations";
 
-/// A failure while wiring the avenues at startup.
-pub type SetupError = Box<dyn std::error::Error + Send + Sync>;
+/// A typed, credential-safe failure while wiring an avenue at startup.
+#[derive(Debug, thiserror::Error)]
+pub enum SetupError {
+    /// An unsafe or incomplete environment configuration was supplied.
+    #[error(transparent)]
+    InvalidConfig(#[from] ores_transport::ConfigError),
+    /// The upstream HTTP client could not be configured.
+    #[error("HTTP transport client configuration failed")]
+    HttpClient,
+    /// The TCP endpoint address is malformed.
+    #[error("TCP endpoint address is invalid")]
+    TcpAddress,
+    /// A requested mutual-TLS connection has no injected connector.
+    #[error("TCP mTLS requested but no TLS connector was provided")]
+    MissingTlsConnector,
+    /// The NATS connection could not be established.
+    #[error("NATS transport unavailable")]
+    NatsUnavailable,
+}
 
 /// Refuse to downgrade a requested mutual-TLS connection to plaintext.
-fn require_tls_connector(mtls_requested: bool, connector_available: bool) -> std::io::Result<()> {
+fn require_tls_connector(mtls_requested: bool, connector_available: bool) -> Result<(), SetupError> {
     if mtls_requested && !connector_available {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "TCP mTLS requested but no TLS connector was provided",
-        ));
+        return Err(SetupError::MissingTlsConnector);
     }
     Ok(())
 }
@@ -87,7 +101,8 @@ where
 
     // Avenue 2.
     if let Some(api_url) = config.api_url.as_deref() {
-        let client = HttpTransport::client_for(api_url, DEFAULT_TRANSPORT_TIMEOUT)?;
+        let client = HttpTransport::client_for(api_url, DEFAULT_TRANSPORT_TIMEOUT)
+            .map_err(|_| SetupError::HttpClient)?;
         gateway = gateway.with_http(
             HttpTransport::new(client, api_url, DEFAULT_TRANSPORT_TIMEOUT),
             HttpRoute {
@@ -98,7 +113,7 @@ where
 
     // Avenue 3.
     if let Some(raw) = config.api_tcp_addr.as_deref() {
-        let address: SocketAddr = raw.parse()?;
+        let address: SocketAddr = raw.parse().map_err(|_| SetupError::TcpAddress)?;
         let endpoint = TcpEndpoint {
             address,
             server_name: config.api_tls_server_name.clone(),
@@ -115,7 +130,9 @@ where
 
     // Avenue 4.
     if let Some(nats_url) = config.nats_url.as_deref() {
-        let context = ores_transport::connect_nats(nats_url).await?;
+        let context = ores_transport::connect_nats(nats_url)
+            .await
+            .map_err(|_| SetupError::NatsUnavailable)?;
         gateway = gateway.with_nats(NatsTransport::new(
             context,
             SERVICE_SLUG,
@@ -170,7 +187,10 @@ mod tests {
 
     #[test]
     fn configured_mtls_never_falls_back_to_plaintext() {
-        assert!(require_tls_connector(true, false).is_err());
+        assert!(matches!(
+            require_tls_connector(true, false),
+            Err(SetupError::MissingTlsConnector)
+        ));
         assert!(require_tls_connector(true, true).is_ok());
         assert!(require_tls_connector(false, false).is_ok());
         assert!(require_tls_connector(false, true).is_ok());
