@@ -48,6 +48,17 @@ pub const ENVELOPE_PATH: &str = "/v1/operations";
 /// A failure while wiring the avenues at startup.
 pub type SetupError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Refuse to downgrade a requested mutual-TLS connection to plaintext.
+fn require_tls_connector(mtls_requested: bool, connector_available: bool) -> std::io::Result<()> {
+    if mtls_requested && !connector_available {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "TCP mTLS requested but no TLS connector was provided",
+        ));
+    }
+    Ok(())
+}
+
 /// Build the gateway for this process from the environment.
 ///
 /// Every avenue past the first is attached only if its variables are set, so a
@@ -93,8 +104,8 @@ where
             server_name: config.api_tls_server_name.clone(),
             timeout: DEFAULT_TRANSPORT_TIMEOUT,
         };
-        // Mutual TLS only when the config is *complete*; a half-configured
-        // connector would fail every call rather than fail to start.
+        // A requested mTLS connection must never silently become plaintext.
+        require_tls_connector(config.uses_mtls(), tls.is_some())?;
         let client = match (tls, config.uses_mtls()) {
             (Some(connector), true) => PersistentTcpClient::tls(endpoint, connector),
             _ => PersistentTcpClient::plaintext(endpoint),
@@ -155,6 +166,14 @@ mod tests {
         // service and updates one of them. Then the web server publishes to
         // subjects the api server does not consume, and both look healthy.
         assert_eq!(SERVICE_SLUG.replace('-', "_").to_uppercase(), ENV_PREFIX);
+    }
+
+    #[test]
+    fn configured_mtls_never_falls_back_to_plaintext() {
+        assert!(require_tls_connector(true, false).is_err());
+        assert!(require_tls_connector(true, true).is_ok());
+        assert!(require_tls_connector(false, false).is_ok());
+        assert!(require_tls_connector(false, true).is_ok());
     }
 
     #[test]
