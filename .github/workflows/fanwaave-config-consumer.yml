@@ -17,5 +17,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      # Formatting is independently testable before cross-org private Cargo
+      # dependencies are admitted. Keep cargo test as the required red/green
+      # contract; this check never substitutes for compilation or unit tests.
+      - name: Check Rust source formatting without dependency download
+        run: cargo fmt --all -- --check
       - name: Test flags-2-env precedence and Fanwaave domain config resolution
         run: cargo test --all-targets
