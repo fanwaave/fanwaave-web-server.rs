@@ -27,14 +27,10 @@ fn run() -> Result<(), StartupError> {
     let applied = flags::resolve_sources().map_err(|_| StartupError::Flags)?;
     let domain_text = read_domain_text(Path::new(".fanwaave-cfg.toml"))?;
     let domain = parse_fanwaave_config(&domain_text).map_err(|_| StartupError::DomainParse)?;
-    let resolved = resolve_fanwaave_config(
-        &domain,
-        &applied.ambient,
-        &applied.argv_overrides,
-    )
-    .map_err(|_| StartupError::DomainResolve)?;
-    let cfg = WebConfig::from_sources(&applied.merged, &resolved)
-        .map_err(|_| StartupError::WebConfig)?;
+    let resolved = resolve_fanwaave_config(&domain, &applied.ambient, &applied.argv_overrides)
+        .map_err(|_| StartupError::DomainResolve)?;
+    let cfg =
+        WebConfig::from_sources(&applied.merged, &resolved).map_err(|_| StartupError::WebConfig)?;
     server::run(&cfg);
     Ok(())
 }
@@ -65,7 +61,10 @@ mod tests {
             std::io::ErrorKind::PermissionDenied,
             "secret-token=do-not-echo",
         ));
-        assert_eq!(error.to_string(), "could not read Fanwaave domain configuration");
+        assert_eq!(
+            error.to_string(),
+            "could not read Fanwaave domain configuration"
+        );
         assert!(!error.to_string().contains("do-not-echo"));
     }
 }

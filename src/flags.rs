@@ -106,11 +106,11 @@ fn scalar_string(name: &str, value: serde_json::Value) -> Result<String, String>
         serde_json::Value::String(value) => Ok(value),
         serde_json::Value::Bool(value) => Ok(value.to_string()),
         serde_json::Value::Number(value) => Ok(value.to_string()),
-        serde_json::Value::Null
-        | serde_json::Value::Array(_)
-        | serde_json::Value::Object(_) => Err(format!(
-            "flags-2-env returned a non-scalar value for {name}"
-        )),
+        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            Err(format!(
+                "flags-2-env returned a non-scalar value for {name}"
+            ))
+        }
     }
 }
 
@@ -142,14 +142,16 @@ mod tests {
                 "--fanwaave-web-bind=127.0.0.1:9090".to_owned(),
             ],
             [("FANWAAVE_WEB_BIND".to_owned(), "127.0.0.1:8081".to_owned())],
-        )
-        ?;
+        )?;
         assert_eq!(
             applied.ambient.get("FANWAAVE_WEB_BIND").map(String::as_str),
             Some("127.0.0.1:8081")
         );
         assert_eq!(
-            applied.argv_overrides.get("FANWAAVE_WEB_BIND").map(String::as_str),
+            applied
+                .argv_overrides
+                .get("FANWAAVE_WEB_BIND")
+                .map(String::as_str),
             Some("127.0.0.1:9090")
         );
         assert_eq!(

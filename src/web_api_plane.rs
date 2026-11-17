@@ -10,8 +10,8 @@
 //!    not the product-web producer path.
 
 use k8s_web_api_data_plane::{
-    DataPlaneCapabilities, DirectDatabasePolicy, InteractionMode, JetStreamPolicy,
-    DataPlaneError, OrgIdentity, StatelessHttpPolicy, StatefulMtlsTcpPolicy,
+    DataPlaneCapabilities, DataPlaneError, DirectDatabasePolicy, InteractionMode, JetStreamPolicy,
+    OrgIdentity, StatefulMtlsTcpPolicy, StatelessHttpPolicy,
 };
 
 pub const GITHUB_ORG: &str = "fanwaave";
@@ -28,20 +28,22 @@ pub enum FourAvenuesError {
 }
 
 pub fn identity() -> Result<OrgIdentity, FourAvenuesError> {
-    OrgIdentity::new(GITHUB_ORG, ORG_SLUG, DNS_ZONE)
-        .map_err(|_| FourAvenuesError::InvalidIdentity)
+    OrgIdentity::new(GITHUB_ORG, ORG_SLUG, DNS_ZONE).map_err(|_| FourAvenuesError::InvalidIdentity)
 }
 
 pub fn capabilities() -> Result<DataPlaneCapabilities, FourAvenuesError> {
     Ok(DataPlaneCapabilities::for_identity(&identity()?))
 }
 
-pub fn policies() -> Result<(
-    DirectDatabasePolicy,
-    StatelessHttpPolicy,
-    StatefulMtlsTcpPolicy,
-    JetStreamPolicy,
-), FourAvenuesError> {
+pub fn policies() -> Result<
+    (
+        DirectDatabasePolicy,
+        StatelessHttpPolicy,
+        StatefulMtlsTcpPolicy,
+        JetStreamPolicy,
+    ),
+    FourAvenuesError,
+> {
     let identity = identity()?;
     Ok((
         DirectDatabasePolicy::for_identity(&identity),
@@ -76,7 +78,10 @@ mod tests {
             caps.nats_request_subject,
             format!("dd.remote.web_api.{ORG_SLUG}.request")
         );
-        assert_eq!(caps.nats_url_in_cluster, "nats://dd-nats.messaging.svc.cluster.local:4222");
+        assert_eq!(
+            caps.nats_url_in_cluster,
+            "nats://dd-nats.messaging.svc.cluster.local:4222"
+        );
         Ok(())
     }
 }

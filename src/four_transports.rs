@@ -24,10 +24,10 @@
 //! `docs/four-transports.md`.
 
 use ores_transport::{
-    DEFAULT_TRANSPORT_TIMEOUT, DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport,
-    PersistentTcpClient, TcpEndpoint, TlsConnector, TransportConfig, TransportMode,
+    DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport, PersistentTcpClient,
+    TcpEndpoint, TlsConnector, TransportConfig, TransportMode, DEFAULT_TRANSPORT_TIMEOUT,
 };
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 
 /// Environment prefix for every variable this service reads.
@@ -66,7 +66,10 @@ pub enum SetupError {
 }
 
 /// Refuse to downgrade a requested mutual-TLS connection to plaintext.
-fn require_tls_connector(mtls_requested: bool, connector_available: bool) -> Result<(), SetupError> {
+fn require_tls_connector(
+    mtls_requested: bool,
+    connector_available: bool,
+) -> Result<(), SetupError> {
     if mtls_requested && !connector_available {
         return Err(SetupError::MissingTlsConnector);
     }
@@ -207,7 +210,10 @@ mod tests {
     fn an_absent_mode_defaults_to_http_and_an_unknown_one_is_refused() {
         assert_eq!(requested_mode(None), Some(TransportMode::Http));
         assert_eq!(requested_mode(Some("tcp")), Some(TransportMode::Tcp));
-        assert_eq!(requested_mode(Some("jet_stream")), Some(TransportMode::JetStream));
+        assert_eq!(
+            requested_mode(Some("jet_stream")),
+            Some(TransportMode::JetStream)
+        );
         assert_eq!(requested_mode(Some("grpc")), None);
         assert_eq!(requested_mode(Some("")), None);
     }
