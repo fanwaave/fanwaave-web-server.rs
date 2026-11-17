@@ -97,22 +97,24 @@ where
     T: DeserializeOwned + Send,
 {
     let config = TransportConfig::from_env(ENV_PREFIX)?;
-    let mut gateway = Gateway::new(direct);
+    let gateway = Gateway::new(direct);
 
     // Avenue 2.
-    if let Some(api_url) = config.api_url.as_deref() {
+    let gateway = if let Some(api_url) = config.api_url.as_deref() {
         let client = HttpTransport::client_for(api_url, DEFAULT_TRANSPORT_TIMEOUT)
             .map_err(|_| SetupError::HttpClient)?;
-        gateway = gateway.with_http(
+        gateway.with_http(
             HttpTransport::new(client, api_url, DEFAULT_TRANSPORT_TIMEOUT),
             HttpRoute {
                 envelope_path: ENVELOPE_PATH.to_owned(),
             },
-        );
-    }
+        )
+    } else {
+        gateway
+    };
 
     // Avenue 3.
-    if let Some(raw) = config.api_tcp_addr.as_deref() {
+    let gateway = if let Some(raw) = config.api_tcp_addr.as_deref() {
         let address: SocketAddr = raw.parse().map_err(|_| SetupError::TcpAddress)?;
         let endpoint = TcpEndpoint {
             address,
@@ -123,22 +125,27 @@ where
         require_tls_connector(config.uses_mtls(), tls.is_some())?;
         let client = match (tls, config.uses_mtls()) {
             (Some(connector), true) => PersistentTcpClient::tls(endpoint, connector),
-            _ => PersistentTcpClient::plaintext(endpoint),
+            (None, true) => return Err(SetupError::MissingTlsConnector),
+            (None, false) | (Some(_), false) => PersistentTcpClient::plaintext(endpoint),
         };
-        gateway = gateway.with_tcp(Arc::new(client));
-    }
+        gateway.with_tcp(Arc::new(client))
+    } else {
+        gateway
+    };
 
     // Avenue 4.
-    if let Some(nats_url) = config.nats_url.as_deref() {
+    let gateway = if let Some(nats_url) = config.nats_url.as_deref() {
         let context = ores_transport::connect_nats(nats_url)
             .await
             .map_err(|_| SetupError::NatsUnavailable)?;
-        gateway = gateway.with_nats(NatsTransport::new(
+        gateway.with_nats(NatsTransport::new(
             context,
             SERVICE_SLUG,
             DEFAULT_TRANSPORT_TIMEOUT,
-        ));
-    }
+        ))
+    } else {
+        gateway
+    };
 
     Ok(gateway)
 }
