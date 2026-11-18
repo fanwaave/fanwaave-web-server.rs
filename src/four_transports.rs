@@ -23,7 +23,9 @@
 //! `fanwaave-lib-core`'s read context, and hand it to [`gateway_from_env`]. See
 //! `docs/four-transports.md`.
 
-use crate::mtls_policy::{decide_tcp_security_mode, TcpPolicyError, TcpSecurityMode};
+use crate::mtls_policy::{
+    decide_tcp_security_mode, parse_sidecar_plaintext_opt_in, TcpPolicyError, TcpSecurityMode,
+};
 
 use ores_transport::{
     DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport, PersistentTcpClient,
@@ -71,6 +73,15 @@ pub enum SetupError {
     /// A connector was supplied but the environment did not request mTLS.
     #[error("TCP TLS connector supplied without matching mTLS configuration")]
     UnexpectedTlsConnector,
+    /// A TCP endpoint without mTLS requires explicit sidecar authorization.
+    #[error("TCP plaintext requires explicit TLS-terminating sidecar opt-in")]
+    MissingSidecarPlaintextOptIn,
+    /// A sidecar opt-in cannot coexist with TLS material or a connector.
+    #[error("TCP sidecar plaintext opt-in conflicts with TLS settings")]
+    ConflictingSidecarPlaintextOptIn,
+    /// The sidecar opt-in value is not a canonical boolean.
+    #[error("TCP sidecar plaintext opt-in must be true or false")]
+    InvalidSidecarPlaintextOptIn,
     /// Configured security mode and available connector contradicted each other.
     #[error("TCP security setup was inconsistent")]
     InconsistentTlsConfiguration,
@@ -86,6 +97,11 @@ impl From<TcpPolicyError> for SetupError {
             TcpPolicyError::IncompleteTlsConfiguration => Self::IncompleteTlsConfiguration,
             TcpPolicyError::MissingTlsConnector => Self::MissingTlsConnector,
             TcpPolicyError::UnexpectedTlsConnector => Self::UnexpectedTlsConnector,
+            TcpPolicyError::MissingSidecarPlaintextOptIn => Self::MissingSidecarPlaintextOptIn,
+            TcpPolicyError::ConflictingSidecarPlaintextOptIn => {
+                Self::ConflictingSidecarPlaintextOptIn
+            }
+            TcpPolicyError::InvalidSidecarPlaintextOptIn => Self::InvalidSidecarPlaintextOptIn,
         }
     }
 }
@@ -114,6 +130,16 @@ where
     T: DeserializeOwned + Send,
 {
     let config = TransportConfig::from_env(ENV_PREFIX)?;
+    // This environment-only security exception is intentionally not a public
+    // CLI flag. Never disclose a rejected value in an error or diagnostic.
+    let sidecar_setting = match std::env::var("FANWAAVE_API_TCP_SIDECAR_PLAINTEXT") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(SetupError::InvalidSidecarPlaintextOptIn);
+        }
+    };
+    let sidecar_plaintext_opt_in = parse_sidecar_plaintext_opt_in(sidecar_setting.as_deref())?;
     let tls_material_present = config.api_tls_server_name.is_some()
         || config.client_cert_file.is_some()
         || config.client_key_file.is_some()
@@ -124,6 +150,7 @@ where
         tls_material_present,
         config.uses_mtls(),
         tls.is_some(),
+        sidecar_plaintext_opt_in,
     )?;
     let gateway = Gateway::new(direct);
 
@@ -245,6 +272,18 @@ mod tests {
         assert!(matches!(
             SetupError::from(TcpPolicyError::IncompleteTlsConfiguration),
             SetupError::IncompleteTlsConfiguration
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::MissingSidecarPlaintextOptIn),
+            SetupError::MissingSidecarPlaintextOptIn
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::ConflictingSidecarPlaintextOptIn),
+            SetupError::ConflictingSidecarPlaintextOptIn
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::InvalidSidecarPlaintextOptIn),
+            SetupError::InvalidSidecarPlaintextOptIn
         ));
     }
 

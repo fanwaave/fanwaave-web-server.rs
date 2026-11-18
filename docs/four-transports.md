@@ -39,16 +39,24 @@ server does not consume while both processes report healthy.
 | `FANWAAVE_READONLY_DATABASE_URL` | 1 | no direct reads |
 | `FANWAAVE_API_URL` | 2 | no stateless HTTP |
 | `FANWAAVE_API_MTLS_ADDR` | 3 | no stateful TCP |
-| `FANWAAVE_API_TLS_SERVER_NAME` | 3 | plaintext to a TLS-terminating mesh |
-| `FANWAAVE_WEB_CLIENT_CERT_FILE` | 3 | ” |
-| `FANWAAVE_WEB_CLIENT_KEY_FILE` | 3 | ” |
-| `FANWAAVE_API_CA_FILE` | 3 | ” |
+| `FANWAAVE_API_TLS_SERVER_NAME` | 3 | no TLS server identity configured |
+| `FANWAAVE_WEB_CLIENT_CERT_FILE` | 3 | no client certificate configured |
+| `FANWAAVE_WEB_CLIENT_KEY_FILE` | 3 | no client key configured |
+| `FANWAAVE_API_CA_FILE` | 3 | no trusted CA configured |
+| `FANWAAVE_API_TCP_SIDECAR_PLAINTEXT` | 3 | plaintext TCP **not** authorized |
 | `FANWAAVE_NATS_URL` | 4 | no asynchronous avenue |
 
 A missing variable disables its avenue. A variable that is present and unsafe
 fails startup: a plaintext `FANWAAVE_API_URL` off loopback, a
 `FANWAAVE_NATS_URL` that is not `tls://`, or mutual TLS with two of its
-four files set.
+four files set. **Plaintext TCP is not the default when mTLS is missing.** It
+requires `FANWAAVE_API_TCP_SIDECAR_PLAINTEXT=true` (lowercase), a configured
+`FANWAAVE_API_MTLS_ADDR`, no TLS material and no injected TLS connector. Use
+this only when a separately deployed and verified TLS-terminating sidecar
+secures the hop. The value `false` (or no variable) keeps it disabled. Any
+other explicit value, orphaned opt-in, or opt-in combined with mTLS fails
+startup without logging the rejected value. This is an environment-only
+security exception, not a public CLI flag.
 
 In-cluster, `FANWAAVE_NATS_URL` points at the messaging service defined in
 `ORESoftware/k8s-cluster` (`remote/argocd/messaging/nats.service.yaml`),
@@ -109,8 +117,10 @@ authenticated once at handshake outlives the token that opened it. The
 credential rides inside the envelope and is re-checked on arrival, so a revoked
 token stops working on the next frame rather than at the next reconnect.
 
-## Ordering note
+## Immutable dependency note
 
-`ores-transport` is currently depended on by `branch = "main"`. Pin it to a rev
-once it is pushed, matching how every other git dependency in this org is
-pinned.
+`ores-transport` is pinned to a full commit SHA in `Cargo.toml`.
+Do not replace it with a floating branch or copy its private source across
+organization boundaries to get CI green. The owner-approved dependency-access
+gate is tracked in
+[Fanwaave issue #18](https://github.com/fanwaave/fanwaave-web-server.rs/issues/18).

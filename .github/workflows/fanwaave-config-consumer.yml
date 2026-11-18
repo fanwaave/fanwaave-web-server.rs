@@ -31,15 +31,17 @@ jobs:
       # Their success never substitutes for compilation or tests.
       - name: Check Rust source formatting without dependency download
         run: cargo fmt --all -- --check
-      # This compiles and executes the exact production mTLS downgrade
-      # predicate without resolving any private Cargo dependencies. It does
-      # NOT substitute for the required full-crate compiler and test gates.
-      - name: Compile and execute isolated production mTLS policy tests
+      # Compile the actual production TLS decision and startup error
+      # redaction without private dependency download. These tests are
+      # independent checks, not a substitute for full Cargo admission.
+      - name: Compile and execute isolated production security policy tests
         shell: bash
         run: |
           set -euo pipefail
           rustc --edition=2021 --test src/mtls_policy.rs -o "$RUNNER_TEMP/fanwaave-mtls-policy-tests"
           "$RUNNER_TEMP/fanwaave-mtls-policy-tests" --test-threads=1
+          rustc --edition=2021 --test src/startup_error_policy.rs -o "$RUNNER_TEMP/fanwaave-startup-error-tests"
+          "$RUNNER_TEMP/fanwaave-startup-error-tests" --test-threads=1
       - name: Reject floating or credential-bearing Cargo Git dependencies
         shell: bash
         run: |
