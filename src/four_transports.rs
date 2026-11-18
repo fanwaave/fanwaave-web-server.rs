@@ -23,7 +23,7 @@
 //! `fanwaave-lib-core`'s read context, and hand it to [`gateway_from_env`]. See
 //! `docs/four-transports.md`.
 
-use crate::mtls_policy::missing_required_connector;
+use crate::mtls_policy::{decide_tcp_security_mode, TcpPolicyError, TcpSecurityMode};
 
 use ores_transport::{
     DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport, PersistentTcpClient,
@@ -62,20 +62,32 @@ pub enum SetupError {
     /// A requested mutual-TLS connection has no injected connector.
     #[error("TCP mTLS requested but no TLS connector was provided")]
     MissingTlsConnector,
+    /// A TLS connector or TLS fields were supplied without a TCP endpoint.
+    #[error("TCP TLS setup supplied without TCP endpoint")]
+    OrphanTlsConfiguration,
+    /// TLS fields are incomplete for a configured TCP endpoint.
+    #[error("TCP mTLS configuration incomplete")]
+    IncompleteTlsConfiguration,
+    /// A connector was supplied but the environment did not request mTLS.
+    #[error("TCP TLS connector supplied without matching mTLS configuration")]
+    UnexpectedTlsConnector,
+    /// Configured security mode and available connector contradicted each other.
+    #[error("TCP security setup was inconsistent")]
+    InconsistentTlsConfiguration,
     /// The NATS connection could not be established.
     #[error("NATS transport unavailable")]
     NatsUnavailable,
 }
 
-/// Refuse to downgrade a requested mutual-TLS connection to plaintext.
-fn require_tls_connector(
-    mtls_requested: bool,
-    connector_available: bool,
-) -> Result<(), SetupError> {
-    if missing_required_connector(mtls_requested, connector_available) {
-        return Err(SetupError::MissingTlsConnector);
+impl From<TcpPolicyError> for SetupError {
+    fn from(value: TcpPolicyError) -> Self {
+        match value {
+            TcpPolicyError::OrphanTlsConfiguration => Self::OrphanTlsConfiguration,
+            TcpPolicyError::IncompleteTlsConfiguration => Self::IncompleteTlsConfiguration,
+            TcpPolicyError::MissingTlsConnector => Self::MissingTlsConnector,
+            TcpPolicyError::UnexpectedTlsConnector => Self::UnexpectedTlsConnector,
+        }
     }
-    Ok(())
 }
 
 /// Build the gateway for this process from the environment.
@@ -102,6 +114,17 @@ where
     T: DeserializeOwned + Send,
 {
     let config = TransportConfig::from_env(ENV_PREFIX)?;
+    let tls_material_present = config.api_tls_server_name.is_some()
+        || config.client_cert_file.is_some()
+        || config.client_key_file.is_some()
+        || config.ca_file.is_some();
+    // Reject contradictory TLS intent before constructing any transport.
+    let tcp_mode = decide_tcp_security_mode(
+        config.api_tcp_addr.is_some(),
+        tls_material_present,
+        config.uses_mtls(),
+        tls.is_some(),
+    )?;
     let gateway = Gateway::new(direct);
 
     // Avenue 2.
@@ -126,12 +149,12 @@ where
             server_name: config.api_tls_server_name.clone(),
             timeout: DEFAULT_TRANSPORT_TIMEOUT,
         };
-        // A requested mTLS connection must never silently become plaintext.
-        require_tls_connector(config.uses_mtls(), tls.is_some())?;
-        let client = match (tls, config.uses_mtls()) {
-            (Some(connector), true) => PersistentTcpClient::tls(endpoint, connector),
-            (None, true) => return Err(SetupError::MissingTlsConnector),
-            (None, false) | (Some(_), false) => PersistentTcpClient::plaintext(endpoint),
+        let client = match (tcp_mode, tls) {
+            (TcpSecurityMode::MutualTls, Some(connector)) => {
+                PersistentTcpClient::tls(endpoint, connector)
+            }
+            (TcpSecurityMode::PlaintextSidecar, None) => PersistentTcpClient::plaintext(endpoint),
+            _ => return Err(SetupError::InconsistentTlsConfiguration),
         };
         gateway.with_tcp(Arc::new(client))
     } else {
@@ -198,14 +221,23 @@ mod tests {
     }
 
     #[test]
-    fn configured_mtls_never_falls_back_to_plaintext() {
+    fn security_policy_errors_map_to_startup_errors() {
         assert!(matches!(
-            require_tls_connector(true, false),
-            Err(SetupError::MissingTlsConnector)
+            SetupError::from(TcpPolicyError::MissingTlsConnector),
+            SetupError::MissingTlsConnector
         ));
-        assert!(require_tls_connector(true, true).is_ok());
-        assert!(require_tls_connector(false, false).is_ok());
-        assert!(require_tls_connector(false, true).is_ok());
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::UnexpectedTlsConnector),
+            SetupError::UnexpectedTlsConnector
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::OrphanTlsConfiguration),
+            SetupError::OrphanTlsConfiguration
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::IncompleteTlsConfiguration),
+            SetupError::IncompleteTlsConfiguration
+        ));
     }
 
     #[test]
