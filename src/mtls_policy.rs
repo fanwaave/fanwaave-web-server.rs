@@ -24,9 +24,7 @@ pub(crate) enum TcpPolicyError {
 }
 
 /// Accept only an explicit lowercase `true` for TLS-terminating sidecar mode.
-pub(crate) fn parse_sidecar_plaintext_opt_in(
-    raw: Option<&str>,
-) -> Result<bool, TcpPolicyError> {
+pub(crate) fn parse_sidecar_plaintext_opt_in(raw: Option<&str>) -> Result<bool, TcpPolicyError> {
     match raw {
         None | Some("false") => Ok(false),
         Some("true") => Ok(true),
