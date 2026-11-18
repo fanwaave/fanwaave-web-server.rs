@@ -23,11 +23,15 @@
 //! `fanwaave-lib-core`'s read context, and hand it to [`gateway_from_env`]. See
 //! `docs/four-transports.md`.
 
-use ores_transport::{
-    DEFAULT_TRANSPORT_TIMEOUT, DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport,
-    PersistentTcpClient, TcpEndpoint, TlsConnector, TransportConfig, TransportMode,
+use crate::mtls_policy::{
+    decide_tcp_security_mode, parse_sidecar_plaintext_opt_in, TcpPolicyError, TcpSecurityMode,
 };
-use serde::{Serialize, de::DeserializeOwned};
+
+use ores_transport::{
+    DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport, PersistentTcpClient,
+    TcpEndpoint, TlsConnector, TransportConfig, TransportMode, DEFAULT_TRANSPORT_TIMEOUT,
+};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{net::SocketAddr, sync::Arc};
 
 /// Environment prefix for every variable this service reads.
@@ -45,8 +49,62 @@ pub const SERVICE_SLUG: &str = "fanwaave";
 /// The api server route that accepts an envelope on avenue 2.
 pub const ENVELOPE_PATH: &str = "/v1/operations";
 
-/// A failure while wiring the avenues at startup.
-pub type SetupError = Box<dyn std::error::Error + Send + Sync>;
+/// A typed, credential-safe failure while wiring an avenue at startup.
+#[derive(Debug, thiserror::Error)]
+pub enum SetupError {
+    /// An unsafe or incomplete environment configuration was supplied.
+    #[error(transparent)]
+    InvalidConfig(#[from] ores_transport::ConfigError),
+    /// The upstream HTTP client could not be configured.
+    #[error("HTTP transport client configuration failed")]
+    HttpClient,
+    /// The TCP endpoint address is malformed.
+    #[error("TCP endpoint address is invalid")]
+    TcpAddress,
+    /// A requested mutual-TLS connection has no injected connector.
+    #[error("TCP mTLS requested but no TLS connector was provided")]
+    MissingTlsConnector,
+    /// A TLS connector or TLS fields were supplied without a TCP endpoint.
+    #[error("TCP TLS setup supplied without TCP endpoint")]
+    OrphanTlsConfiguration,
+    /// TLS fields are incomplete for a configured TCP endpoint.
+    #[error("TCP mTLS configuration incomplete")]
+    IncompleteTlsConfiguration,
+    /// A connector was supplied but the environment did not request mTLS.
+    #[error("TCP TLS connector supplied without matching mTLS configuration")]
+    UnexpectedTlsConnector,
+    /// A TCP endpoint without mTLS requires explicit sidecar authorization.
+    #[error("TCP plaintext requires explicit TLS-terminating sidecar opt-in")]
+    MissingSidecarPlaintextOptIn,
+    /// A sidecar opt-in cannot coexist with TLS material or a connector.
+    #[error("TCP sidecar plaintext opt-in conflicts with TLS settings")]
+    ConflictingSidecarPlaintextOptIn,
+    /// The sidecar opt-in value is not a canonical boolean.
+    #[error("TCP sidecar plaintext opt-in must be true or false")]
+    InvalidSidecarPlaintextOptIn,
+    /// Configured security mode and available connector contradicted each other.
+    #[error("TCP security setup was inconsistent")]
+    InconsistentTlsConfiguration,
+    /// The NATS connection could not be established.
+    #[error("NATS transport unavailable")]
+    NatsUnavailable,
+}
+
+impl From<TcpPolicyError> for SetupError {
+    fn from(value: TcpPolicyError) -> Self {
+        match value {
+            TcpPolicyError::OrphanTlsConfiguration => Self::OrphanTlsConfiguration,
+            TcpPolicyError::IncompleteTlsConfiguration => Self::IncompleteTlsConfiguration,
+            TcpPolicyError::MissingTlsConnector => Self::MissingTlsConnector,
+            TcpPolicyError::UnexpectedTlsConnector => Self::UnexpectedTlsConnector,
+            TcpPolicyError::MissingSidecarPlaintextOptIn => Self::MissingSidecarPlaintextOptIn,
+            TcpPolicyError::ConflictingSidecarPlaintextOptIn => {
+                Self::ConflictingSidecarPlaintextOptIn
+            }
+            TcpPolicyError::InvalidSidecarPlaintextOptIn => Self::InvalidSidecarPlaintextOptIn,
+        }
+    }
+}
 
 /// Build the gateway for this process from the environment.
 ///
@@ -72,45 +130,85 @@ where
     T: DeserializeOwned + Send,
 {
     let config = TransportConfig::from_env(ENV_PREFIX)?;
-    let mut gateway = Gateway::new(direct);
+    // This environment-only security exception is intentionally not a public
+    // CLI flag. Never disclose a rejected value in an error or diagnostic.
+    let sidecar_setting = match std::env::var("FANWAAVE_API_TCP_SIDECAR_PLAINTEXT") {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(SetupError::InvalidSidecarPlaintextOptIn);
+        }
+    };
+    let sidecar_plaintext_opt_in = parse_sidecar_plaintext_opt_in(sidecar_setting.as_deref())?;
+    let tls_material_present = config.api_tls_server_name.is_some()
+        || config.client_cert_file.is_some()
+        || config.client_key_file.is_some()
+        || config.ca_file.is_some();
+    // Reject contradictory TLS intent before constructing any transport.
+    let tcp_mode = decide_tcp_security_mode(
+        config.api_tcp_addr.is_some(),
+        tls_material_present,
+        config.uses_mtls(),
+        tls.is_some(),
+        sidecar_plaintext_opt_in,
+    )?;
+    let gateway = Gateway::new(direct);
 
     // Avenue 2.
-    if let Some(api_url) = config.api_url.as_deref() {
-        let client = HttpTransport::client_for(api_url, DEFAULT_TRANSPORT_TIMEOUT)?;
-        gateway = gateway.with_http(
+    let gateway = if let Some(api_url) = config.api_url.as_deref() {
+        let client = HttpTransport::client_for(api_url, DEFAULT_TRANSPORT_TIMEOUT)
+            .map_err(|_| SetupError::HttpClient)?;
+        gateway.with_http(
             HttpTransport::new(client, api_url, DEFAULT_TRANSPORT_TIMEOUT),
             HttpRoute {
                 envelope_path: ENVELOPE_PATH.to_owned(),
             },
-        );
-    }
+        )
+    } else {
+        gateway
+    };
 
     // Avenue 3.
-    if let Some(raw) = config.api_tcp_addr.as_deref() {
-        let address: SocketAddr = raw.parse()?;
+    let gateway = if let Some(raw) = config.api_tcp_addr.as_deref() {
+        let address: SocketAddr = raw.parse().map_err(|_| SetupError::TcpAddress)?;
         let endpoint = TcpEndpoint {
             address,
             server_name: config.api_tls_server_name.clone(),
             timeout: DEFAULT_TRANSPORT_TIMEOUT,
         };
-        // Mutual TLS only when the config is *complete*; a half-configured
-        // connector would fail every call rather than fail to start.
-        let client = match (tls, config.uses_mtls()) {
-            (Some(connector), true) => PersistentTcpClient::tls(endpoint, connector),
-            _ => PersistentTcpClient::plaintext(endpoint),
+        let client = match (tcp_mode, tls) {
+            (TcpSecurityMode::MutualTls, Some(connector)) => {
+                PersistentTcpClient::tls(endpoint, connector)
+            }
+            (TcpSecurityMode::PlaintextSidecar, None) => PersistentTcpClient::plaintext(endpoint),
+            (TcpSecurityMode::MutualTls, None) => {
+                return Err(SetupError::MissingTlsConnector);
+            }
+            (TcpSecurityMode::PlaintextSidecar, Some(_)) => {
+                return Err(SetupError::UnexpectedTlsConnector);
+            }
+            (TcpSecurityMode::Disabled, None) | (TcpSecurityMode::Disabled, Some(_)) => {
+                return Err(SetupError::InconsistentTlsConfiguration);
+            }
         };
-        gateway = gateway.with_tcp(Arc::new(client));
-    }
+        gateway.with_tcp(Arc::new(client))
+    } else {
+        gateway
+    };
 
     // Avenue 4.
-    if let Some(nats_url) = config.nats_url.as_deref() {
-        let context = ores_transport::connect_nats(nats_url).await?;
-        gateway = gateway.with_nats(NatsTransport::new(
+    let gateway = if let Some(nats_url) = config.nats_url.as_deref() {
+        let context = ores_transport::connect_nats(nats_url)
+            .await
+            .map_err(|_| SetupError::NatsUnavailable)?;
+        gateway.with_nats(NatsTransport::new(
             context,
             SERVICE_SLUG,
             DEFAULT_TRANSPORT_TIMEOUT,
-        ));
-    }
+        ))
+    } else {
+        gateway
+    };
 
     Ok(gateway)
 }
@@ -158,10 +256,45 @@ mod tests {
     }
 
     #[test]
+    fn security_policy_errors_map_to_startup_errors() {
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::MissingTlsConnector),
+            SetupError::MissingTlsConnector
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::UnexpectedTlsConnector),
+            SetupError::UnexpectedTlsConnector
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::OrphanTlsConfiguration),
+            SetupError::OrphanTlsConfiguration
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::IncompleteTlsConfiguration),
+            SetupError::IncompleteTlsConfiguration
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::MissingSidecarPlaintextOptIn),
+            SetupError::MissingSidecarPlaintextOptIn
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::ConflictingSidecarPlaintextOptIn),
+            SetupError::ConflictingSidecarPlaintextOptIn
+        ));
+        assert!(matches!(
+            SetupError::from(TcpPolicyError::InvalidSidecarPlaintextOptIn),
+            SetupError::InvalidSidecarPlaintextOptIn
+        ));
+    }
+
+    #[test]
     fn an_absent_mode_defaults_to_http_and_an_unknown_one_is_refused() {
         assert_eq!(requested_mode(None), Some(TransportMode::Http));
         assert_eq!(requested_mode(Some("tcp")), Some(TransportMode::Tcp));
-        assert_eq!(requested_mode(Some("jet_stream")), Some(TransportMode::JetStream));
+        assert_eq!(
+            requested_mode(Some("jet_stream")),
+            Some(TransportMode::JetStream)
+        );
         assert_eq!(requested_mode(Some("grpc")), None);
         assert_eq!(requested_mode(Some("")), None);
     }

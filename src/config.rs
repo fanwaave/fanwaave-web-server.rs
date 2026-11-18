@@ -66,8 +66,9 @@ mod tests {
     const DOMAIN_CONFIG: &str = include_str!("../.fanwaave-cfg.toml");
 
     #[test]
-    fn domain_default_and_secret_environment_compose() {
-        let policy = parse_fanwaave_config(DOMAIN_CONFIG).expect("tracked domain config parses");
+    fn domain_default_and_secret_environment_compose() -> Result<(), String> {
+        let policy = parse_fanwaave_config(DOMAIN_CONFIG)
+            .map_err(|_| "tracked domain config must parse".to_owned())?;
         let ambient = BTreeMap::from([
             (
                 "FANWAAVE_DATABASE_URL".to_owned(),
@@ -79,8 +80,8 @@ mod tests {
             ),
         ]);
         let resolved = resolve_fanwaave_config(&policy, &ambient, &BTreeMap::new())
-            .expect("tracked domain config resolves");
-        let config = WebConfig::from_sources(&ambient, &resolved).expect("web config resolves");
+            .map_err(|_| "tracked domain config must resolve".to_owned())?;
+        let config = WebConfig::from_sources(&ambient, &resolved)?;
         assert_eq!(config.bind, "127.0.0.1:8081");
         assert_eq!(
             config.api_http_base.as_deref(),
@@ -90,20 +91,25 @@ mod tests {
             config.database_url.as_deref(),
             Some("postgres://user:pass@127.0.0.1/fanwaave")
         );
+        Ok(())
     }
 
     #[test]
-    fn secret_database_binding_rejects_argv_delivery() {
-        let policy = parse_fanwaave_config(DOMAIN_CONFIG).expect("tracked domain config parses");
-        let error = resolve_fanwaave_config(
+    fn secret_database_binding_rejects_argv_delivery() -> Result<(), String> {
+        let policy = parse_fanwaave_config(DOMAIN_CONFIG)
+            .map_err(|_| "tracked domain config must parse".to_owned())?;
+        let result = resolve_fanwaave_config(
             &policy,
             &BTreeMap::new(),
             &BTreeMap::from([(
                 "FANWAAVE_DATABASE_URL".to_owned(),
                 "postgres://do-not-accept-on-argv".to_owned(),
             )]),
-        )
-        .expect_err("secret argv must fail closed");
-        assert!(error.to_string().contains("may not be supplied through argv"));
+        );
+        assert!(
+            matches!(result, Err(ref error) if error.to_string().contains("may not be supplied through argv")),
+            "secret argv must fail closed"
+        );
+        Ok(())
     }
 }

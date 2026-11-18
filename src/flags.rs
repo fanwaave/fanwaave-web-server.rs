@@ -1,7 +1,6 @@
 //! Fail-closed argv and environment resolution through flags-2-env.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 
 use flags2env::BundledFlags2Env;
 use tempfile::NamedTempFile;
@@ -31,13 +30,12 @@ fn resolve_sources_from(
     argv: &[String],
     environment: impl IntoIterator<Item = (String, String)>,
 ) -> Result<AppliedFlags, String> {
-    let mut contract = NamedTempFile::new()
-        .map_err(|error| format!("cannot create embedded flags-2-env contract: {error}"))?;
-    contract
-        .write_all(CONTRACT.as_bytes())
+    let contract = NamedTempFile::new()
+        .map_err(|error| format!("cannot create embedded flags-2-env contract: {error}"))?
+        .into_temp_path();
+    std::fs::write(&contract, CONTRACT.as_bytes())
         .map_err(|error| format!("cannot materialize embedded flags-2-env contract: {error}"))?;
     let path = contract
-        .path()
         .to_str()
         .ok_or_else(|| "flags-2-env contract path is not valid UTF-8".to_owned())?;
     let parser = BundledFlags2Env::new();
@@ -70,17 +68,23 @@ fn resolve_sources_from(
         ));
     }
 
-    let mut ambient_raw = parsed.dotenv;
-    ambient_raw.extend(environment);
-    ambient_raw.extend(parsed.dotenv_overrides);
-    let ambient = ambient_raw.into_iter().collect::<BTreeMap<_, _>>();
+    // Later sources take precedence, including explicit dotenv overrides.
+    let ambient = parsed
+        .dotenv
+        .into_iter()
+        .chain(environment)
+        .chain(parsed.dotenv_overrides)
+        .collect::<BTreeMap<_, _>>();
     let argv_overrides = parsed
         .provided_flags
         .into_iter()
         .collect::<BTreeMap<_, _>>();
 
-    let mut raw = ambient.clone();
-    raw.extend(argv_overrides.clone());
+    let raw = ambient
+        .clone()
+        .into_iter()
+        .chain(argv_overrides.clone())
+        .collect::<BTreeMap<_, _>>();
     let typed = parser
         .coerce::<serde_json::Map<String, serde_json::Value>, _>(&raw, Some(path))
         .map_err(|error| format!("flags-2-env typed configuration failed: {error}"))?;
@@ -102,9 +106,11 @@ fn scalar_string(name: &str, value: serde_json::Value) -> Result<String, String>
         serde_json::Value::String(value) => Ok(value),
         serde_json::Value::Bool(value) => Ok(value.to_string()),
         serde_json::Value::Number(value) => Ok(value.to_string()),
-        _ => Err(format!(
-            "flags-2-env returned a non-scalar value for {name}"
-        )),
+        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            Err(format!(
+                "flags-2-env returned a non-scalar value for {name}"
+            ))
+        }
     }
 }
 
@@ -113,7 +119,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unknown_options_fail_closed_without_echoing_values() {
+    fn unknown_options_fail_closed_without_echoing_values() -> Result<(), String> {
         let error = resolve_sources_from(
             &[
                 "server".to_owned(),
@@ -121,32 +127,37 @@ mod tests {
             ],
             std::iter::empty(),
         )
-        .expect_err("unknown option");
+        .err()
+        .ok_or_else(|| "unknown option was accepted".to_owned())?;
         assert!(error.contains("--definitely-unknown"));
         assert!(!error.contains("do-not-echo"));
+        Ok(())
     }
 
     #[test]
-    fn explicit_argv_is_preserved_separately_from_ambient_environment() {
+    fn explicit_argv_is_preserved_separately_from_ambient_environment() -> Result<(), String> {
         let applied = resolve_sources_from(
             &[
                 "server".to_owned(),
                 "--fanwaave-web-bind=127.0.0.1:9090".to_owned(),
             ],
             [("FANWAAVE_WEB_BIND".to_owned(), "127.0.0.1:8081".to_owned())],
-        )
-        .expect("valid flags");
+        )?;
         assert_eq!(
             applied.ambient.get("FANWAAVE_WEB_BIND").map(String::as_str),
             Some("127.0.0.1:8081")
         );
         assert_eq!(
-            applied.argv_overrides.get("FANWAAVE_WEB_BIND").map(String::as_str),
+            applied
+                .argv_overrides
+                .get("FANWAAVE_WEB_BIND")
+                .map(String::as_str),
             Some("127.0.0.1:9090")
         );
         assert_eq!(
             applied.merged.get("FANWAAVE_WEB_BIND").map(String::as_str),
             Some("127.0.0.1:9090")
         );
+        Ok(())
     }
 }
