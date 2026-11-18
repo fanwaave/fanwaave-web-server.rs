@@ -23,6 +23,8 @@
 //! `fanwaave-lib-core`'s read context, and hand it to [`gateway_from_env`]. See
 //! `docs/four-transports.md`.
 
+use crate::mtls_policy::missing_required_connector;
+
 use ores_transport::{
     DirectReader, Gateway, HttpRoute, HttpTransport, NatsTransport, PersistentTcpClient,
     TcpEndpoint, TlsConnector, TransportConfig, TransportMode, DEFAULT_TRANSPORT_TIMEOUT,
@@ -70,7 +72,7 @@ fn require_tls_connector(
     mtls_requested: bool,
     connector_available: bool,
 ) -> Result<(), SetupError> {
-    if mtls_requested && !connector_available {
+    if missing_required_connector(mtls_requested, connector_available) {
         return Err(SetupError::MissingTlsConnector);
     }
     Ok(())
