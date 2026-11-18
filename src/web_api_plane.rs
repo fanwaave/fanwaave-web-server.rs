@@ -18,20 +18,12 @@ pub const GITHUB_ORG: &str = "fanwaave";
 pub const ORG_SLUG: &str = "fanwaave";
 pub const DNS_ZONE: &str = "fanwaave.dev";
 
-/// Fallible identities and policy validation remain explicit in the API.
-#[derive(Debug, thiserror::Error)]
-pub enum FourAvenuesError {
-    #[error("invalid Fanwaave catalog identity")]
-    InvalidIdentity,
-    #[error(transparent)]
-    InvalidPolicy(#[from] DataPlaneError),
+/// Preserve upstream validation failures instead of obscuring their variants.
+pub fn identity() -> Result<OrgIdentity, DataPlaneError> {
+    OrgIdentity::new(GITHUB_ORG, ORG_SLUG, DNS_ZONE)
 }
 
-pub fn identity() -> Result<OrgIdentity, FourAvenuesError> {
-    OrgIdentity::new(GITHUB_ORG, ORG_SLUG, DNS_ZONE).map_err(|_| FourAvenuesError::InvalidIdentity)
-}
-
-pub fn capabilities() -> Result<DataPlaneCapabilities, FourAvenuesError> {
+pub fn capabilities() -> Result<DataPlaneCapabilities, DataPlaneError> {
     Ok(DataPlaneCapabilities::for_identity(&identity()?))
 }
 
@@ -42,7 +34,7 @@ pub fn policies() -> Result<
         StatefulMtlsTcpPolicy,
         JetStreamPolicy,
     ),
-    FourAvenuesError,
+    DataPlaneError,
 > {
     let identity = identity()?;
     Ok((
@@ -53,7 +45,7 @@ pub fn policies() -> Result<
     ))
 }
 
-pub fn validate_four_avenues() -> Result<(), FourAvenuesError> {
+pub fn validate_four_avenues() -> Result<(), DataPlaneError> {
     let identity = identity()?;
     let (db, http, tcp, nats) = policies()?;
     db.validate(&identity)?;
@@ -69,7 +61,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn four_avenues_are_named_and_fail_closed() -> Result<(), FourAvenuesError> {
+    fn four_avenues_are_named_and_fail_closed() -> Result<(), DataPlaneError> {
         validate_four_avenues()?;
         let caps = capabilities()?;
         assert_eq!(caps.app_host, format!("app.{DNS_ZONE}"));
@@ -83,5 +75,16 @@ mod tests {
             "nats://dd-nats.messaging.svc.cluster.local:4222"
         );
         Ok(())
+    }
+
+    #[test]
+    fn policy_validation_retains_upstream_error_type() {
+        // The public validation API used DataPlaneError before the panic cleanup.
+        let checked: Result<(), DataPlaneError> = validate_four_avenues();
+        assert!(checked.is_ok());
+        assert!(matches!(
+            OrgIdentity::new(GITHUB_ORG, "invalid.slug", DNS_ZONE),
+            Err(DataPlaneError::InvalidIdentifier("org_slug"))
+        ));
     }
 }

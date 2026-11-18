@@ -11,16 +11,58 @@ permissions:
 jobs:
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
+      # The head commit, not GitHub's synthetic PR merge, is the candidate.
+      # This unprivileged workflow never receives cross-org source credentials.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      # Formatting is independently testable before cross-org private Cargo
-      # dependencies are admitted. Keep cargo test as the required red/green
-      # contract; this check never substitutes for compilation or unit tests.
+        with:
+          components: rustfmt, clippy
+      - name: Verify exact candidate checkout
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      # Cheap gates execute without an authorized private Cargo source grant.
+      # Their success never substitutes for compilation or tests.
       - name: Check Rust source formatting without dependency download
         run: cargo fmt --all -- --check
+      - name: Reject floating or credential-bearing Cargo Git dependencies
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+          from urllib.parse import urlsplit
+          cargo = tomllib.loads(pathlib.Path("Cargo.toml").read_text())
+          git_deps = [
+              (name, info)
+              for name, info in cargo.get("dependencies", {}).items()
+              if isinstance(info, dict) and "git" in info
+          ]
+          assert git_deps, "expected pinned Git dependency authority"
+          for name, info in git_deps:
+              ref = info.get("rev", "")
+              url = urlsplit(info["git"])
+              assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{name} must use a full commit SHA"
+              assert url.scheme == "https" and url.hostname == "github.com", f"{name}: unapproved Git URL"
+              assert not url.username and not url.password and not url.query and not url.fragment, f"{name}: Git URL must contain no credentials/parameters"
+          print(f"validated {len(git_deps)} SHA-pinned Git dependency declarations")
+          PY
+
+      # The next step is the required admission gate. If private Git access is
+      # unavailable it fails independently; compiler/Clippy/test steps SKIP,
+      # and their status is UNVERIFIED, never green.
+      - name: Resolve pinned Cargo dependencies (required admission)
+        run: cargo fetch
+      - name: Compile every Rust target
+        run: cargo check --all-targets
+      - name: Strict Clippy on every Rust target
+        run: cargo clippy --all-targets -- -D warnings
       - name: Test flags-2-env precedence and Fanwaave domain config resolution
         run: cargo test --all-targets
