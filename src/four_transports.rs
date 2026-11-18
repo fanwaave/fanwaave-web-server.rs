@@ -154,7 +154,15 @@ where
                 PersistentTcpClient::tls(endpoint, connector)
             }
             (TcpSecurityMode::PlaintextSidecar, None) => PersistentTcpClient::plaintext(endpoint),
-            _ => return Err(SetupError::InconsistentTlsConfiguration),
+            (TcpSecurityMode::MutualTls, None) => {
+                return Err(SetupError::MissingTlsConnector);
+            }
+            (TcpSecurityMode::PlaintextSidecar, Some(_)) => {
+                return Err(SetupError::UnexpectedTlsConnector);
+            }
+            (TcpSecurityMode::Disabled, None) | (TcpSecurityMode::Disabled, Some(_)) => {
+                return Err(SetupError::InconsistentTlsConfiguration);
+            }
         };
         gateway.with_tcp(Arc::new(client))
     } else {
