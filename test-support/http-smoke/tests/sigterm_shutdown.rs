@@ -54,13 +54,18 @@ fn sigterm_shuts_down_live_server_with_success_exit() -> io::Result<()> {
     let startup_deadline = Instant::now() + Duration::from_secs(8);
     loop {
         if child.0.try_wait()?.is_some() {
-            return Err(io::Error::other("signal probe exited before serving health"));
+            return Err(io::Error::other(
+                "signal probe exited before serving health",
+            ));
         }
         if responds_to_health(addr) {
             break;
         }
         if Instant::now() >= startup_deadline {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "signal probe startup timed out"));
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "signal probe startup timed out",
+            ));
         }
         thread::sleep(Duration::from_millis(25));
     }
@@ -79,7 +84,10 @@ fn sigterm_shuts_down_live_server_with_success_exit() -> io::Result<()> {
             return Ok(());
         }
         if Instant::now() >= shutdown_deadline {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "SIGTERM shutdown timed out"));
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "SIGTERM shutdown timed out",
+            ));
         }
         thread::sleep(Duration::from_millis(25));
     }
