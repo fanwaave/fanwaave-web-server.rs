@@ -41,10 +41,7 @@ pub async fn run(
 /// to prevent API callers from bypassing fail-closed listener admission.
 /// The explicit shutdown future allows real HTTP and graceful-shutdown tests
 /// without registering process-global signal handlers.
-pub(crate) async fn serve_prepared<S>(
-    listener: TcpListener,
-    shutdown: S,
-) -> Result<(), ServerError>
+pub(crate) async fn serve_prepared<S>(listener: TcpListener, shutdown: S) -> Result<(), ServerError>
 where
     S: Future<Output = ()> + Send + 'static,
 {
