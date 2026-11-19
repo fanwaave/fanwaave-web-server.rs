@@ -52,14 +52,15 @@ impl ReadAuthorizer for ScopedCiAuthorizer {
         verified: &ContactReadGrantClaims,
         operation: ReadOperation,
     ) -> Result<(), ReadError> {
-        match operation {
-            ReadOperation::ContactJob { id }
-                if verified.sub == "trusted-ci-issuer-fixture"
-                    && (id.to_string() == ROW || id.to_string() == OTHER) =>
-            {
-                Ok(())
-            }
-            _ => Err(ReadError::Unauthorized),
+        // This irrefutable pattern becomes a compiler error if a new
+        // read operation is added without an explicit authorization policy.
+        let ReadOperation::ContactJob { id } = operation;
+        if verified.sub == "trusted-ci-issuer-fixture"
+            && (id.to_string() == ROW || id.to_string() == OTHER)
+        {
+            Ok(())
+        } else {
+            Err(ReadError::Unauthorized)
         }
     }
 }
