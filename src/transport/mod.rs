@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod contact_direct;
 pub mod db;
 pub mod http;
 pub mod listener;
