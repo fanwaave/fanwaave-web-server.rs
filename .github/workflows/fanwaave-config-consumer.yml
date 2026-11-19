@@ -42,6 +42,8 @@ jobs:
           "$RUNNER_TEMP/fanwaave-mtls-policy-tests" --test-threads=1
           rustc --edition=2021 --test src/startup_error_policy.rs -o "$RUNNER_TEMP/fanwaave-startup-error-tests"
           "$RUNNER_TEMP/fanwaave-startup-error-tests" --test-threads=1
+          rustc --edition=2021 --test src/transport/listener.rs -o "$RUNNER_TEMP/fanwaave-listener-admission-tests"
+          "$RUNNER_TEMP/fanwaave-listener-admission-tests" --test-threads=1
       - name: Reject floating or credential-bearing Cargo Git dependencies
         shell: bash
         run: |

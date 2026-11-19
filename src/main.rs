@@ -19,6 +19,8 @@ enum StartupError {
     DomainResolve,
     #[error("Fanwaave web configuration is invalid")]
     WebConfig,
+    #[error(transparent)]
+    Server(#[from] server::ServerError),
 }
 
 fn read_domain_text(path: &Path) -> Result<String, StartupError> {
@@ -26,7 +28,7 @@ fn read_domain_text(path: &Path) -> Result<String, StartupError> {
         .map_err(|error| StartupError::DomainRead(startup_error_policy::redact_io_error(&error)))
 }
 
-fn run() -> Result<(), StartupError> {
+async fn run() -> Result<(), StartupError> {
     let applied = flags::resolve_sources().map_err(|_| StartupError::Flags)?;
     let domain_text = read_domain_text(Path::new(".fanwaave-cfg.toml"))?;
     let domain = parse_fanwaave_config(&domain_text).map_err(|_| StartupError::DomainParse)?;
@@ -34,12 +36,13 @@ fn run() -> Result<(), StartupError> {
         .map_err(|_| StartupError::DomainResolve)?;
     let cfg =
         WebConfig::from_sources(&applied.merged, &resolved).map_err(|_| StartupError::WebConfig)?;
-    server::run(&cfg);
+    server::run(&cfg, &applied.ambient, &applied.merged).await?;
     Ok(())
 }
 
-fn main() -> ExitCode {
-    match run() {
+#[tokio::main]
+async fn main() -> ExitCode {
+    match run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
