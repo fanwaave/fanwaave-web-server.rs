@@ -47,18 +47,21 @@ pub fn client_mtls_connector(
         return Err(MtlsConnectorError::InvalidClientKey);
     }
 
-    let mut trust = RootCertStore::empty();
     let trusted = rustls_pemfile::certs(&mut Cursor::new(trusted_ca_pem))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| MtlsConnectorError::MalformedRoot)?;
     if trusted.is_empty() {
         return Err(MtlsConnectorError::InvalidRoots);
     }
-    for cert in trusted {
-        trust
-            .add(cert)
-            .map_err(|_| MtlsConnectorError::MalformedRoot)?;
-    }
+    let trust = trusted.into_iter().try_fold(
+        RootCertStore::empty(),
+        |mut store, cert| -> Result<RootCertStore, MtlsConnectorError> {
+            store
+                .add(cert)
+                .map_err(|_| MtlsConnectorError::MalformedRoot)?;
+            Ok(store)
+        },
+    )?;
 
     let identity = rustls_pemfile::certs(&mut Cursor::new(client_cert_chain_pem))
         .collect::<Result<Vec<_>, _>>()

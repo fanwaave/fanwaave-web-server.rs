@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{error::Error, io::Cursor, path::PathBuf, sync::Arc, time::Duration};
+use std::{io::Cursor, path::PathBuf, sync::Arc, time::Duration};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -18,7 +18,27 @@ use tokio_rustls::{
 
 use crate::mtls_connector::{client_mtls_connector, MtlsConnectorError};
 
-type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+#[derive(Debug, thiserror::Error)]
+enum TestError {
+    #[error("TLS fixture I/O failed")]
+    Io(#[from] std::io::Error),
+    #[error("TLS configuration was invalid")]
+    Tls(#[from] tokio_rustls::rustls::Error),
+    #[error("TLS fixture environment was missing")]
+    Environment(#[from] std::env::VarError),
+    #[error("TLS connector rejected an identity")]
+    Connector(#[from] MtlsConnectorError),
+    #[error("TLS handshake exceeded the deadline")]
+    Timeout(#[from] tokio::time::error::Elapsed),
+    #[error("TLS handshake background task failed")]
+    Task(#[from] tokio::task::JoinError),
+    #[error("fixture PEM private key is missing")]
+    MissingPrivateKey,
+    #[error("invalid TLS verifier or server name")]
+    InvalidTlsConfig,
+}
+
+type TestResult<T> = Result<T, TestError>;
 
 fn fixture(name: &str) -> TestResult<Vec<u8>> {
     let root = PathBuf::from(std::env::var("FANWAAVE_TLS_FIXTURES")?);
@@ -31,7 +51,7 @@ fn certificates(raw: &[u8]) -> TestResult<Vec<CertificateDer<'static>>> {
 
 fn private_key(raw: &[u8]) -> TestResult<PrivateKeyDer<'static>> {
     rustls_pemfile::private_key(&mut Cursor::new(raw))?
-        .ok_or_else(|| "fixture PEM private key is missing".into())
+        .ok_or(TestError::MissingPrivateKey)
 }
 
 fn trust_roots() -> TestResult<RootCertStore> {
@@ -44,7 +64,9 @@ fn trust_roots() -> TestResult<RootCertStore> {
 
 fn strict_server() -> TestResult<TlsAcceptor> {
     let root = Arc::new(trust_roots()?);
-    let verifier = WebPkiClientVerifier::builder(root).build()?;
+    let verifier = WebPkiClientVerifier::builder(root)
+        .build()
+        .map_err(|_| TestError::InvalidTlsConfig)?;
     let config = ServerConfig::builder()
         .with_client_cert_verifier(verifier)
         .with_single_cert(
@@ -76,7 +98,8 @@ async fn exchange(client: TlsConnector, hostname: &str) -> TestResult<(bool, boo
         }
     });
     let socket = TcpStream::connect(endpoint).await?;
-    let name = ServerName::try_from(hostname.to_owned())?;
+    let name = ServerName::try_from(hostname.to_owned())
+        .map_err(|_| TestError::InvalidTlsConfig)?;
     let client_received = match timeout(Duration::from_secs(5), client.connect(name, socket)).await
     {
         Ok(Ok(mut tls)) => {
