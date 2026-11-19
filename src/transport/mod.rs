@@ -2,6 +2,7 @@
 
 pub mod db;
 pub mod http;
+pub mod listener;
 pub mod nats;
 pub mod tcp;
 
