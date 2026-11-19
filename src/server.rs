@@ -10,6 +10,13 @@ use crate::{
     transport::listener::{prepare_listener, AdmissionError},
 };
 
+// These static-only responses must not be cached or embedded as authority.
+const STATIC_RESPONSE_HEADERS: [(&str, &str); 3] = [
+    ("cache-control", "no-store"),
+    ("x-content-type-options", "nosniff"),
+    ("x-frame-options", "DENY"),
+];
+
 /// Limited static-only service until issue #19 provides an authenticated gateway.
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -49,9 +56,18 @@ where
         .map_err(|error| ServerError::ListenerRuntime(error.kind()))?;
 
     let router = Router::new()
-        .route("/", get(|| async { Html(pages::home::markup()) }))
-        .route("/healthz", get(|| async { Html(pages::health::markup()) }))
-        .route("/readyz", get(|| async { StatusCode::SERVICE_UNAVAILABLE }));
+        .route(
+            "/",
+            get(|| async { (STATIC_RESPONSE_HEADERS, Html(pages::home::markup())) }),
+        )
+        .route(
+            "/healthz",
+            get(|| async { (STATIC_RESPONSE_HEADERS, Html(pages::health::markup())) }),
+        )
+        .route(
+            "/readyz",
+            get(|| async { (STATIC_RESPONSE_HEADERS, StatusCode::SERVICE_UNAVAILABLE) }),
+        );
 
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown)
@@ -59,7 +75,34 @@ where
         .map_err(|error| ServerError::Serve(error.kind()))
 }
 
+/// Allow Kubernetes/Unix SIGTERM to drain active requests, as well as Ctrl-C.
+/// A closed or unregistrable signal stream must never falsely report shutdown.
 async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(termination) => {
+                tokio::select! {
+                    _ = await_termination(termination) => {},
+                    _ = await_ctrl_c() => {},
+                }
+            }
+            Err(_) => await_ctrl_c().await,
+        }
+    }
+
+    #[cfg(not(unix))]
+    await_ctrl_c().await;
+}
+
+#[cfg(unix)]
+async fn await_termination(mut termination: tokio::signal::unix::Signal) {
+    if termination.recv().await.is_none() {
+        std::future::pending::<()>().await;
+    }
+}
+
+async fn await_ctrl_c() {
     if tokio::signal::ctrl_c().await.is_err() {
         // Failed signal registration cannot masquerade as orderly shutdown.
         std::future::pending::<()>().await;

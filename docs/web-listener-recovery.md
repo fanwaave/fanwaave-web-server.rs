@@ -51,3 +51,20 @@ This **does not** compile the complete production app or exercise real database
 queries, `DirectReader`, four-transport dispatch, credential authorization,
 or TLS. The unprivileged, no-secret workflow runs this before private Cargo
 admission. Do not treat a passing isolated harness as full app acceptance.
+
+## Security hardening of the temporary listener
+
+All three exposed routes explicitly emit `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`, including
+the intentionally failed `/readyz` response. The isolated HTTP harness
+reads the full response to connection close (rather than one partial TCP read)
+and asserts these headers against real Axum-generated replies.
+
+Unix deployments now respond to SIGTERM in addition to Ctrl-C, allowing
+Axum's graceful shutdown to drain active requests. On non-Unix systems,
+Ctrl-C remains supported. Registering SIGTERM unsuccessfully does not itself
+trigger a false success or initiate shutdown. The smoke harness verifies the
+graceful-shutdown path with an injected signal; it does **not** send a real OS
+SIGTERM or establish a full production/Kubernetes lifecycle proof.
+
+The full crate and real authenticated transport remain blocked by issue #18.

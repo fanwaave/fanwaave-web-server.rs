@@ -17,15 +17,28 @@ async fn request_status(
     let mut stream = TcpStream::connect(addr).await?;
     let request = format!("GET {route} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await?;
-    let mut buffer = [0u8; 4096];
-    let received = timeout(Duration::from_secs(5), stream.read(&mut buffer))
+    // Read through connection close; a single TCP read may contain only a
+    // partial header. Timeout bounds a stalled HTTP response.
+    let mut buffer = Vec::new();
+    timeout(Duration::from_secs(5), stream.read_to_end(&mut buffer))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "HTTP response timed out"))??;
-    let status_line = String::from_utf8_lossy(&buffer[..received]);
+    let response = String::from_utf8_lossy(&buffer);
     assert!(
-        status_line.starts_with(&format!("HTTP/1.1 {expected_status}")),
+        response.starts_with(&format!("HTTP/1.1 {expected_status}")),
         "unexpected response status"
     );
+    if expected_status != 404 {
+        let header_block = response.split("\r\n\r\n").next().unwrap_or("");
+        let lowered = header_block.to_ascii_lowercase();
+        for expected in [
+            "cache-control: no-store",
+            "x-content-type-options: nosniff",
+            "x-frame-options: deny",
+        ] {
+            assert!(lowered.contains(expected), "missing response security header");
+        }
+    }
     Ok(())
 }
 
