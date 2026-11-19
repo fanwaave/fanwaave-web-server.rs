@@ -141,7 +141,7 @@ async fn server_refuses_certificate_from_unknown_client_ca() -> TestResult<()> {
 #[tokio::test]
 async fn client_refuses_wrong_server_name_even_with_trusted_ca() -> TestResult<()> {
     let negotiated = exchange(client("client.pem", "client.key")?, "not-localhost.invalid").await?;
-    assert_eq!(negotiated.0, false);
+    assert!(!negotiated.0);
     Ok(())
 }
 
