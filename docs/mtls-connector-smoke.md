@@ -28,3 +28,14 @@ connected through the four-avenue Gateway. The private Cargo admission and
 real end-to-end transport checks remain required. The signer and certificate
 rotation/revocation architecture also requires independent security review.
 No production /readyz behavior changes.
+
+## Additional negative handshake coverage
+
+The source-owned Rustls fixture also checks that a client with an unrelated
+pinned CA refuses the otherwise valid localhost server (no system trust-store
+fallback), that a real trusted-CA-signed *expired* client certificate is
+rejected by the server, and that an endpoint responding with raw plaintext
+cannot complete a TLS session or trigger an automatic plaintext retry. The
+expired client certificate is issued with fixed 2020 validity using an
+ephemeral per-run CA and OpenSSL; no sensitive key is committed. This is still
+a connector-level test, not the private ores-transport PersistentTcpClient.

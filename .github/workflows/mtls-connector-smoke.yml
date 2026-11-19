@@ -78,6 +78,37 @@ jobs:
           openssl x509 -req -in rogue-client.csr -CA rogue-ca.pem -CAkey rogue-ca.key \
             -CAcreateserial -days 1 -sha256 -extfile client.ext \
             -out rogue-client.pem >/dev/null 2>&1
+          # Produce a genuinely expired client certificate, signed by the
+          # trusted CA. Its dates are fixed in 2020, not clock-flaky -days 0.
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=expired-ci-client" \
+            -keyout expired-client.key -out expired-client.csr >/dev/null 2>&1
+          mkdir -p newcerts
+          : > index.txt
+          printf '1000\n' > serial
+          cat > expired-ca.cnf <<'CONF'
+          [ ca ]
+          default_ca = CA_default
+          [ CA_default ]
+          database = ./index.txt
+          new_certs_dir = ./newcerts
+          certificate = ./ca.pem
+          private_key = ./ca.key
+          serial = ./serial
+          default_md = sha256
+          policy = policy_any
+          [ policy_any ]
+          commonName = supplied
+          [ client_ext ]
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature
+          extendedKeyUsage = clientAuth
+          CONF
+          openssl ca -batch -config expired-ca.cnf \
+            -in expired-client.csr -out expired-client.pem -notext \
+            -startdate 20200101000000Z -enddate 20200102000000Z \
+            -extensions client_ext >/dev/null 2>&1
+          test "$(openssl x509 -in expired-client.pem -noout -enddate)" = \
+            'notAfter=Jan  2 00:00:00 2020 GMT'
           openssl verify -CAfile ca.pem server.pem client.pem
           openssl verify -CAfile rogue-ca.pem rogue-client.pem
           echo "FANWAAVE_TLS_FIXTURES=$root" >> "$GITHUB_ENV"
