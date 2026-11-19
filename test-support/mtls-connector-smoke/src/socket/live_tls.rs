@@ -77,7 +77,8 @@ async fn exchange(client: TlsConnector, hostname: &str) -> TestResult<(bool, boo
     });
     let socket = TcpStream::connect(endpoint).await?;
     let name = ServerName::try_from(hostname.to_owned())?;
-    let client_received = match timeout(Duration::from_secs(5), client.connect(name, socket)).await {
+    let client_received = match timeout(Duration::from_secs(5), client.connect(name, socket)).await
+    {
         Ok(Ok(mut tls)) => {
             let mut reply = [0_u8; 2];
             matches!(
