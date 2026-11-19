@@ -35,3 +35,19 @@ They do NOT prove the Axum app compiles or works end-to-end.
    exact PR head, followed by independent security review and branch policy.
 
 Never deploy this static-only stage as the authenticated production service.
+
+## Isolated live HTTP verification
+
+The same-repository `test-support/http-smoke` crate compiles the **actual**
+production `src/server.rs`, `src/transport/listener.rs`, and page modules
+against public Axum/Tokio dependencies. It replaces only the upstream-dependent
+`WebConfig` type with a narrowly equivalent test shape. With an ephemeral
+loopback socket, it sends real HTTP requests to the production router, verifies
+home/health/liveness, unready and unknown-route statuses, and exercises a
+bounded graceful shutdown. It also checks that production `run` rejects a
+public bind and configured-but-unwired upstream without opening a socket.
+
+This **does not** compile the complete production app or exercise real database
+queries, `DirectReader`, four-transport dispatch, credential authorization,
+or TLS. The unprivileged, no-secret workflow runs this before private Cargo
+admission. Do not treat a passing isolated harness as full app acceptance.

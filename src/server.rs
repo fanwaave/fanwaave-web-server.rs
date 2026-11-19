@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::{collections::BTreeMap, io};
+use std::{collections::BTreeMap, future::Future, io, net::TcpListener};
 
 use axum::{http::StatusCode, response::Html, routing::get, Router};
 
@@ -34,6 +34,20 @@ pub async fn run(
         ambient,
         applied,
     )?;
+    serve_prepared(listener, shutdown_signal()).await
+}
+
+/// Runs the production router on an already admitted socket. Kept internal
+/// to prevent API callers from bypassing fail-closed listener admission.
+/// The explicit shutdown future allows real HTTP and graceful-shutdown tests
+/// without registering process-global signal handlers.
+pub(crate) async fn serve_prepared<S>(
+    listener: TcpListener,
+    shutdown: S,
+) -> Result<(), ServerError>
+where
+    S: Future<Output = ()> + Send + 'static,
+{
     let listener = tokio::net::TcpListener::from_std(listener)
         .map_err(|error| ServerError::ListenerRuntime(error.kind()))?;
 
@@ -43,7 +57,7 @@ pub async fn run(
         .route("/readyz", get(|| async { StatusCode::SERVICE_UNAVAILABLE }));
 
     axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown)
         .await
         .map_err(|error| ServerError::Serve(error.kind()))
 }
