@@ -6,7 +6,7 @@ to ores_transport::DirectReader<ContactReadOperation, Option<ContactJobView>>.
 
 Dependencies:
 - fanwaave-interfaces draft #24, 9fe7e98120a4fade4092fc5cf2eb555041fb26ef
-- fanwaave-lib-core draft #29, e0563dbfe268ebba6c7eb05e9a3c9df368f58b0a
+- fanwaave-lib-core draft #29, aa0f2d60cd9215576aef5b7d88edf76e6e09c377
 - ORESoftware/ores-transport pinned 7d4c88d68528608de52fdf0d9b538b55100e1f0b
 
 This is a PROPOSED draft dependency repin only, not a released or reviewed
@@ -32,3 +32,15 @@ cannot fetch these authorities without owner-approved read credentials.
 Rustfmt/FP/static tests alone cannot establish full adapter compilation.
 No cross-org private source mirror is authorized. Maintain this draft and
 DO NOT repin, merge, deploy or mark production readiness prematurely.
+
+## Reconciled PR #28 / #29 authorization boundary
+
+The candidate lib-core SHA now requires an injected `ReadAuthorizer` in
+addition to cryptographic, resource-bound bearer verification. A verified
+principal and exact ContactJob UUID must pass the service-owned policy
+before any PostgreSQL operation. No default-allow implementation exists.
+The isolated adapter CI defines a **test-only** scoped authorizer and
+rejects a correctly signed grant for a policy-denied job. It does not
+provide, deploy or approve the production identity/resource policy.
+This changes only the stacked draft #21; parent web-server #20 remains
+untouched, and full private transport compilation remains blocked.

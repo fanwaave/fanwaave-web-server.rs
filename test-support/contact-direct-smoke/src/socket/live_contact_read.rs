@@ -1,12 +1,17 @@
 #![forbid(unsafe_code)]
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use fanwaave_interfaces::contact_read::{
     ContactReadGrantClaims, ContactReadOperation, CONTACT_READ_AUDIENCE, CONTACT_READ_ISSUER,
     CONTACT_READ_SCOPE,
 };
-use fanwaave_lib_core::{config::CoreConfig, ReadContext, ReadVerifierKey};
+use fanwaave_lib_core::{
+    config::CoreConfig, ReadAuthorizer, ReadContext, ReadError, ReadOperation, ReadVerifierKey,
+};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use uuid::Uuid;
 
@@ -35,6 +40,32 @@ enum TestError {
     Transport,
     #[error("canonical PostgreSQL fixture was missing")]
     MissingRow,
+}
+
+// CI-only resource policy. A valid signature cannot override a denied
+// principal/job. No production issuer or allow-all authorizer lives here.
+struct ScopedCiAuthorizer;
+
+impl ReadAuthorizer for ScopedCiAuthorizer {
+    fn authorize(
+        &self,
+        verified: &ContactReadGrantClaims,
+        operation: ReadOperation,
+    ) -> Result<(), ReadError> {
+        match operation {
+            ReadOperation::ContactJob { id }
+                if verified.sub == "trusted-ci-issuer-fixture"
+                    && (id.to_string() == ROW || id.to_string() == OTHER) =>
+            {
+                Ok(())
+            }
+            _ => Err(ReadError::Unauthorized),
+        }
+    }
+}
+
+fn policy() -> Arc<dyn ReadAuthorizer> {
+    Arc::new(ScopedCiAuthorizer)
 }
 
 fn read_context_config() -> Result<CoreConfig, TestError> {
@@ -72,7 +103,7 @@ async fn production_adapter_returns_real_postgresql_job_and_none_for_unknown(
         kid: KID,
         secret: SIGNING_KEY.as_bytes(),
     }];
-    let context = ReadContext::connect(&read_context_config()?, &keys).await?;
+    let context = ReadContext::connect(&read_context_config()?, &keys, policy()).await?;
     let adapter = ContactJobDirectReader::new(context);
     let job = Uuid::parse_str(ROW)?;
     let operation = ContactReadOperation::GetContactJob { job_id: ROW.into() };
@@ -106,7 +137,7 @@ async fn actual_adapter_denies_wrong_job_scope_and_unknown_kid_before_lookup(
         kid: KID,
         secret: SIGNING_KEY.as_bytes(),
     }];
-    let context = ReadContext::connect(&read_context_config()?, &keys).await?;
+    let context = ReadContext::connect(&read_context_config()?, &keys, policy()).await?;
     let adapter = ContactJobDirectReader::new(context);
     let job = Uuid::parse_str(ROW)?;
     let other = Uuid::parse_str(OTHER)?;
@@ -122,6 +153,18 @@ async fn actual_adapter_denies_wrong_job_scope_and_unknown_kid_before_lookup(
             Err(TransportError::Unauthorized)
         ));
     }
+    // Even a correctly signed, resource-matching grant is denied if the
+    // separately injected principal/resource policy rejects the job.
+    let excluded = Uuid::parse_str("00000000-0000-4000-8000-000000000010")?;
+    let excluded_op = ContactReadOperation::GetContactJob {
+        job_id: excluded.to_string(),
+    };
+    let excluded_token = auth_for(excluded, KID, SIGNING_KEY, CONTACT_READ_SCOPE)?;
+    assert!(matches!(
+        adapter.read(&excluded_op, &excluded_token).await,
+        Err(TransportError::Unauthorized)
+    ));
+
     let malformed = ContactReadOperation::GetContactJob {
         job_id: "not-uuid".into(),
     };

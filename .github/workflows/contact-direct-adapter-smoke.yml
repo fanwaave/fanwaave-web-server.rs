@@ -65,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --location --retry 3 --silent --show-error \
-            "https://raw.githubusercontent.com/fanwaave/fanwaave-lib-core/e0563dbfe268ebba6c7eb05e9a3c9df368f58b0a/migrations/0002_contact_delivery.sql" \
+            "https://raw.githubusercontent.com/fanwaave/fanwaave-lib-core/aa0f2d60cd9215576aef5b7d88edf76e6e09c377/migrations/0002_contact_delivery.sql" \
             --output "$RUNNER_TEMP/fanwaave-0002.sql"
           test "$(git hash-object "$RUNNER_TEMP/fanwaave-0002.sql")" = "af0020ec507b52afbc26e2d2458475ac2babf113"
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
