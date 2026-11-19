@@ -1,7 +1,23 @@
-name = "fanwaave-web-server.rs"
-kind = "web-server"
+[package]
+org = "fanwaave"
+name = "fanwaave-web-server"
 version = "0.1.0"
+description = "Fanwaave Rust web server"
+license = "MIT"
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/fanwaave/fanwaave-web-server.rs"
 
 [dependencies]
 "fanwaave/fanwaave-lib-core" = "^0.1.0"
 "fanwaave/fanwaave-orm-core" = "^0.1.0"
+
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[targets.repository]
+dir = "."
+adapter = "none"
