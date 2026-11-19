@@ -82,9 +82,11 @@ mod tests {
     }
 
     #[test]
-    fn actually_binds_loopback_and_sets_nonblocking() -> Result<(), Box<dyn std::error::Error>> {
+    fn actually_binds_loopback_and_sets_nonblocking() -> Result<(), AdmissionError> {
         let listener = prepare_listener("127.0.0.1:0", false, &clean(), &clean())?;
-        let address = listener.local_addr()?;
+        let address = listener
+            .local_addr()
+            .map_err(|error| AdmissionError::Bind(error.kind()))?;
         assert!(address.ip().is_loopback());
         assert_ne!(address.port(), 0);
         assert_eq!(
@@ -147,9 +149,13 @@ mod tests {
     }
 
     #[test]
-    fn occupied_port_is_a_typed_failure_not_success() -> Result<(), Box<dyn std::error::Error>> {
-        let occupied = TcpListener::bind("127.0.0.1:0")?;
-        let port = occupied.local_addr()?.port();
+    fn occupied_port_is_a_typed_failure_not_success() -> Result<(), AdmissionError> {
+        let occupied = TcpListener::bind("127.0.0.1:0")
+            .map_err(|error| AdmissionError::Bind(error.kind()))?;
+        let port = occupied
+            .local_addr()
+            .map_err(|error| AdmissionError::Bind(error.kind()))?
+            .port();
         assert_eq!(
             prepare_listener(&format!("127.0.0.1:{port}"), false, &clean(), &clean()).unwrap_err(),
             AdmissionError::Bind(io::ErrorKind::AddrInUse)
