@@ -12,7 +12,10 @@ tcp-transport = []
 nats-transport = []
 
 [dependencies]
-fanwaave-lib-core = { git = "https://github.com/fanwaave/fanwaave-lib-core.git", rev = "b7b0c79bf6c5c71a5508c12f25503ad001a1265e", default-features = false, features = ["read-only"] }
+fanwaave-lib-core = { git = "https://github.com/fanwaave/fanwaave-lib-core.git", rev = "aa0f2d60cd9215576aef5b7d88edf76e6e09c377", default-features = false, features = ["read-only"] }
+async-trait = "0.1"
+fanwaave-interfaces = { git = "https://github.com/fanwaave/fanwaave-interfaces.git", rev = "9fe7e98120a4fade4092fc5cf2eb555041fb26ef" }
+uuid = "1"
 flags2env = { git = "https://github.com/flags-2-env/flags-2-env.git", rev = "b708a041531a830bd49f030250836896096e7abd" }
 # four transport avenues (feat/four-transports)
 ores-transport = { git = "https://github.com/ORESoftware/ores-transport.git", rev = "7d4c88d68528608de52fdf0d9b538b55100e1f0b" }  # reviewed main commit, no floating dependency
@@ -23,6 +26,8 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
 
 [lints.rust]
 unsafe_code = "forbid"

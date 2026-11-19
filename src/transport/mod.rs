@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
+pub mod contact_direct;
 pub mod db;
 pub mod http;
 pub mod listener;
+pub mod mtls_connector;
 pub mod nats;
 pub mod tcp;
 

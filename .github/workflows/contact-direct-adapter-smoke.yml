@@ -1,0 +1,86 @@
+name: contact-direct-adapter-smoke
+
+on:
+  pull_request:
+    paths:
+      - "src/transport/contact_direct.rs"
+      - "src/transport/mod.rs"
+      - "Cargo.toml"
+      - "test-support/contact-direct-smoke/**"
+      - ".github/workflows/contact-direct-adapter-smoke.yml"
+      - "docs/contact-direct-staging.md"
+  push:
+    branches: [dev]
+    paths:
+      - "src/transport/contact_direct.rs"
+      - "test-support/contact-direct-smoke/**"
+      - ".github/workflows/contact-direct-adapter-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  source-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      FANWAAVE_READ_TEST_DSN: postgres://fanwaave_read_ci:read_ci_test_password@127.0.0.1:5432/postgres
+    steps:
+      - name: Checkout exact source PR SHA without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact source head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format-check production adapter and isolated test crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition=2021 --check src/transport/contact_direct.rs
+          cargo fmt --manifest-path test-support/contact-direct-smoke/Cargo.toml -- --check
+      - name: Verify and apply immutable public canonical contact migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://raw.githubusercontent.com/fanwaave/fanwaave-lib-core/aa0f2d60cd9215576aef5b7d88edf76e6e09c377/migrations/0002_contact_delivery.sql" \
+            --output "$RUNNER_TEMP/fanwaave-0002.sql"
+          test "$(git hash-object "$RUNNER_TEMP/fanwaave-0002.sql")" = "af0020ec507b52afbc26e2d2458475ac2babf113"
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f "$RUNNER_TEMP/fanwaave-0002.sql"
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE fanwaave_read_ci LOGIN PASSWORD 'read_ci_test_password';
+          GRANT USAGE ON SCHEMA public TO fanwaave_read_ci;
+          INSERT INTO public.contact_jobs
+            (id, idempotency_key, channel, provider, payload)
+          VALUES
+            ('00000000-0000-4000-8000-000000000001',
+             'fixture-contact-job-0001', 'email', 'sendgrid', '{"to":"ci-only"}'::jsonb);
+          GRANT SELECT ON TABLE public.contact_jobs TO fanwaave_read_ci;
+          SQL
+      - name: Execute real adapter source against PostgreSQL (private trait shim only)
+        run: cargo test --manifest-path test-support/contact-direct-smoke/Cargo.toml --all-targets
+      - name: Strict Clippy for isolated production adapter source
+        run: cargo clippy --manifest-path test-support/contact-direct-smoke/Cargo.toml --all-targets -- -D warnings
