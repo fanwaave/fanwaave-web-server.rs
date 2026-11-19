@@ -1,0 +1,17 @@
+[package]
+name = "fanwaave-contact-direct-smoke"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+fanwaave-interfaces = { git = "https://github.com/fanwaave/fanwaave-interfaces.git", rev = "9fe7e98120a4fade4092fc5cf2eb555041fb26ef" }
+fanwaave-lib-core = { git = "https://github.com/fanwaave/fanwaave-lib-core.git", rev = "e0563dbfe268ebba6c7eb05e9a3c9df368f58b0a", default-features = false, features = ["read-only"] }
+jsonwebtoken = "9"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+uuid = "1"
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
