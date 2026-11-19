@@ -36,7 +36,10 @@ async fn request_status(
             "x-content-type-options: nosniff",
             "x-frame-options: deny",
         ] {
-            assert!(lowered.contains(expected), "missing response security header");
+            assert!(
+                lowered.contains(expected),
+                "missing response security header"
+            );
         }
     }
     Ok(())
