@@ -68,3 +68,14 @@ graceful-shutdown path with an injected signal; it does **not** send a real OS
 SIGTERM or establish a full production/Kubernetes lifecycle proof.
 
 The full crate and real authenticated transport remain blocked by issue #18.
+
+## Executed Unix SIGTERM regression
+
+The isolated HTTP harness now includes a test-only child-process binary and a
+Unix integration test. It starts the actual production `server::run` using
+an ephemeral loopback port, waits for a genuine `GET /healthz` response,
+sends OS SIGTERM to that child, and requires a successful exit within a bounded
+deadline. A child-process guard kills/reaps a stuck test child so the CI job
+cannot leave the test server running. This verifies the real SIGTERM path when
+the source CI executes the test; it still does not prove any database or
+transport gateway lifecycle.
