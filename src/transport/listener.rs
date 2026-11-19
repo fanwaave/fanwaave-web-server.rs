@@ -150,8 +150,8 @@ mod tests {
 
     #[test]
     fn occupied_port_is_a_typed_failure_not_success() -> Result<(), AdmissionError> {
-        let occupied = TcpListener::bind("127.0.0.1:0")
-            .map_err(|error| AdmissionError::Bind(error.kind()))?;
+        let occupied =
+            TcpListener::bind("127.0.0.1:0").map_err(|error| AdmissionError::Bind(error.kind()))?;
         let port = occupied
             .local_addr()
             .map_err(|error| AdmissionError::Bind(error.kind()))?
