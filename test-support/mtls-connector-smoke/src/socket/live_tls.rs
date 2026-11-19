@@ -50,8 +50,7 @@ fn certificates(raw: &[u8]) -> TestResult<Vec<CertificateDer<'static>>> {
 }
 
 fn private_key(raw: &[u8]) -> TestResult<PrivateKeyDer<'static>> {
-    rustls_pemfile::private_key(&mut Cursor::new(raw))?
-        .ok_or(TestError::MissingPrivateKey)
+    rustls_pemfile::private_key(&mut Cursor::new(raw))?.ok_or(TestError::MissingPrivateKey)
 }
 
 fn trust_roots() -> TestResult<RootCertStore> {
@@ -98,8 +97,8 @@ async fn exchange(client: TlsConnector, hostname: &str) -> TestResult<(bool, boo
         }
     });
     let socket = TcpStream::connect(endpoint).await?;
-    let name = ServerName::try_from(hostname.to_owned())
-        .map_err(|_| TestError::InvalidTlsConfig)?;
+    let name =
+        ServerName::try_from(hostname.to_owned()).map_err(|_| TestError::InvalidTlsConfig)?;
     let client_received = match timeout(Duration::from_secs(5), client.connect(name, socket)).await
     {
         Ok(Ok(mut tls)) => {
