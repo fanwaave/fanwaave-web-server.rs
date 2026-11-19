@@ -11,10 +11,10 @@ pub mod config {
     }
 }
 
-#[path = "../../../src/pages/mod.rs"]
-pub mod pages;
 #[path = "../../../src/transport/listener.rs"]
 pub mod listener;
+#[path = "../../../src/pages/mod.rs"]
+pub mod pages;
 pub mod transport {
     pub use crate::listener;
 }
