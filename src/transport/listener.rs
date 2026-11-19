@@ -4,8 +4,7 @@
 
 use std::{
     collections::BTreeMap,
-    fmt,
-    io,
+    fmt, io,
     net::{SocketAddr, TcpListener},
 };
 
@@ -22,8 +21,12 @@ impl fmt::Display for AdmissionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
             Self::InvalidBind => "web listener bind address is invalid",
-            Self::NonLoopbackBind => "public web binding requires authenticated gateway integration",
-            Self::GatewayUnavailable => "configured web backend requires unavailable authenticated gateway",
+            Self::NonLoopbackBind => {
+                "public web binding requires authenticated gateway integration"
+            }
+            Self::GatewayUnavailable => {
+                "configured web backend requires unavailable authenticated gateway"
+            }
             Self::Bind(_) => "web listener could not bind",
             Self::Nonblocking(_) => "web listener could not enter nonblocking mode",
         };
@@ -62,7 +65,8 @@ pub fn prepare_listener(
         return Err(AdmissionError::GatewayUnavailable);
     }
 
-    let listener = TcpListener::bind(address).map_err(|error| AdmissionError::Bind(error.kind()))?;
+    let listener =
+        TcpListener::bind(address).map_err(|error| AdmissionError::Bind(error.kind()))?;
     listener
         .set_nonblocking(true)
         .map_err(|error| AdmissionError::Nonblocking(error.kind()))?;
@@ -78,12 +82,16 @@ mod tests {
     }
 
     #[test]
-    fn actually_binds_loopback_and_sets_nonblocking() {
-        let listener = prepare_listener("127.0.0.1:0", false, &clean(), &clean()).unwrap();
-        let address = listener.local_addr().unwrap();
+    fn actually_binds_loopback_and_sets_nonblocking() -> Result<(), Box<dyn std::error::Error>> {
+        let listener = prepare_listener("127.0.0.1:0", false, &clean(), &clean())?;
+        let address = listener.local_addr()?;
         assert!(address.ip().is_loopback());
         assert_ne!(address.port(), 0);
-        assert_eq!(listener.accept().unwrap_err().kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        Ok(())
     }
 
     #[test]
@@ -139,13 +147,14 @@ mod tests {
     }
 
     #[test]
-    fn occupied_port_is_a_typed_failure_not_success() {
-        let occupied = TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = occupied.local_addr().unwrap().port();
+    fn occupied_port_is_a_typed_failure_not_success() -> Result<(), Box<dyn std::error::Error>> {
+        let occupied = TcpListener::bind("127.0.0.1:0")?;
+        let port = occupied.local_addr()?.port();
         assert_eq!(
             prepare_listener(&format!("127.0.0.1:{port}"), false, &clean(), &clean()).unwrap_err(),
             AdmissionError::Bind(io::ErrorKind::AddrInUse)
         );
+        Ok(())
     }
 
     #[test]

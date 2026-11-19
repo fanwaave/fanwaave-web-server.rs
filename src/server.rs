@@ -40,10 +40,7 @@ pub async fn run(
     let router = Router::new()
         .route("/", get(|| async { Html(pages::home::markup()) }))
         .route("/healthz", get(|| async { Html(pages::health::markup()) }))
-        .route(
-            "/readyz",
-            get(|| async { StatusCode::SERVICE_UNAVAILABLE }),
-        );
+        .route("/readyz", get(|| async { StatusCode::SERVICE_UNAVAILABLE }));
 
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
